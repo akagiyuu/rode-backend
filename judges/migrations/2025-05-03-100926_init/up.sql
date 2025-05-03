@@ -1,14 +1,9 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE TYPE room_kind AS ENUM(
-    'FE',
-    'BE'
-);
-
 CREATE TABLE IF NOT EXISTS rooms(
     id serial PRIMARY KEY,
     code character(12) NOT NULL UNIQUE,
-    kind room_kind NOT NULL,
+    kind int NOT NULL,
     open_time timestamp NOT NULL,
     close_time timestamp NOT NULL,
     created_at timestamp NOT NULL DEFAULT now()
@@ -40,7 +35,8 @@ CREATE TABLE IF NOT EXISTS questions(
     id uuid PRIMARY KEY,
     room_id serial NOT NULl references rooms(id),
     score int NOT NULL,
-    timeout int NOT NULL
+    time_limit int NOT NULL,
+    memory_limit int NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS test_cases(
@@ -51,34 +47,21 @@ CREATE TABLE IF NOT EXISTS test_cases(
     is_hidden boolean NOT NULL
 );
 
-CREATE TYPE language AS ENUM(
-    'CPP',
-    'JAVA',
-    'PYTHON',
-    'HTML'
-);
-
 CREATE TABLE IF NOT EXISTS submission_histories(
     id uuid PRIMARY KEY,
     question_id uuid NOT NULL references questions(id),
     team_id serial NOT NULL references teams(id),
-    language language NOT NULL,
+    language int NOT NULL,
     code text NOT NULL,
     score real,
     compilation_error text,
     created_at timestamp NOT NULL DEFAULT now()
 );
 
-CREATE TYPE status AS ENUM(
-    'TIMEOUT',
-    'FAILED',
-    'SUCCESS'
-);
-
 CREATE TABLE IF NOT EXISTS submission_details(
     submission_history_id uuid NOT NULL references submission_histories(id),
     test_case_id uuid NOT NULL references test_cases(id),
-    status status NOT NULL,
+    status int NOT NULL,
     run_time int NOT NULL,
     stdout text,
     stderr text,
