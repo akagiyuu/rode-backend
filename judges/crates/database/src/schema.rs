@@ -1,19 +1,5 @@
 // @generated automatically by Diesel CLI.
 
-pub mod sql_types {
-    #[derive(diesel::query_builder::QueryId, Clone, diesel::sql_types::SqlType)]
-    #[diesel(postgres_type(name = "language"))]
-    pub struct Language;
-
-    #[derive(diesel::query_builder::QueryId, Clone, diesel::sql_types::SqlType)]
-    #[diesel(postgres_type(name = "room_kind"))]
-    pub struct RoomKind;
-
-    #[derive(diesel::query_builder::QueryId, Clone, diesel::sql_types::SqlType)]
-    #[diesel(postgres_type(name = "status"))]
-    pub struct Status;
-}
-
 diesel::table! {
     accounts (id) {
         id -> Uuid,
@@ -41,19 +27,17 @@ diesel::table! {
         id -> Uuid,
         room_id -> Int4,
         score -> Int4,
-        timeout -> Int4,
+        time_limit -> Int4,
+        memory_limit -> Int4,
     }
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
-    use super::sql_types::RoomKind;
-
     rooms (id) {
         id -> Int4,
         #[max_length = 12]
         code -> Bpchar,
-        kind -> RoomKind,
+        kind -> Int4,
         open_time -> Timestamp,
         close_time -> Timestamp,
         created_at -> Timestamp,
@@ -61,13 +45,10 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
-    use super::sql_types::Status;
-
     submission_details (submission_history_id, test_case_id) {
         submission_history_id -> Uuid,
         test_case_id -> Uuid,
-        status -> Status,
+        status -> Int4,
         run_time -> Int4,
         stdout -> Nullable<Text>,
         stderr -> Nullable<Text>,
@@ -75,14 +56,11 @@ diesel::table! {
 }
 
 diesel::table! {
-    use diesel::sql_types::*;
-    use super::sql_types::Language;
-
     submission_histories (id) {
         id -> Uuid,
         question_id -> Uuid,
         team_id -> Int4,
-        language -> Language,
+        language -> Int4,
         code -> Text,
         score -> Nullable<Float4>,
         compilation_error -> Nullable<Text>,
