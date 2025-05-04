@@ -9,11 +9,13 @@ use diesel_async::{
 };
 use futures::StreamExt;
 use lapin::{
-    ConnectionProperties,
-    options::{BasicAckOptions, BasicConsumeOptions},
-    types::FieldTable,
+    message::Delivery, options::{BasicAckOptions, BasicConsumeOptions}, types::FieldTable, ConnectionProperties
 };
 use uuid::Uuid;
+
+async fn process(delivery: Delivery) -> Result<()> {
+    
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
