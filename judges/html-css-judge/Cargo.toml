@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.98"
 chromiumoxide = { version = "0.7.0", default-features = false, features = ["tokio-runtime"] }
+config = "0.15.11"
+database = { version = "0.1.0", path = "../crates/database" }
+diesel-async = { version = "0.5.2", features = ["async-connection-wrapper", "deadpool", "postgres"] }
+futures = "0.3.31"
+html-image-comparer = "1.1.0"
 lapin = "2.5.3"
+serde = { version = "1.0.219", features = ["derive"] }
 tokio = { version = "1.44.2", features = ["full"] }
+uuid = { version = "1.16.0", features = ["v4"] }
