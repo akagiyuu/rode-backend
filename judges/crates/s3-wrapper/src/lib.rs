@@ -42,11 +42,15 @@ pub async fn download(
     path: &Path,
     max_retry_count: usize,
     client: &Client,
-) -> Result<()> {
-    let download_fn = || async move { _download(key, bucket, path, client).await };
-    download_fn
-        .retry(ExponentialBuilder::default().with_max_times(max_retry_count))
-        .await?;
+) -> Result<Vec<u8>> {
+    if !path.exists() {
+        let download_fn = || async move { _download(key, bucket, path, client).await };
+        download_fn
+            .retry(ExponentialBuilder::default().with_max_times(max_retry_count))
+            .await?;
+    }
 
-    Ok(())
+    let data = fs::read(path).await?;
+
+    Ok(data)
 }
