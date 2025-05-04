@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS submissions(
 
 CREATE TABLE IF NOT EXISTS submission_details(
     id uuid PRIMARY KEY,
-    submission_id uuid NOT NULL references submission_histories(id) ON DELETE CASCADE,
+    submission_id uuid NOT NULL references submissions(id) ON DELETE CASCADE,
     status int NOT NULL,
     run_time int NOT NULL, -- millisecond
     stdout text,
