@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.98"
+aws-config = { version = "1.6.2", features = ["behavior-version-latest"] }
+aws-sdk-s3 = { version = "1.83.0", features = ["behavior-version-latest"] }
 chromiumoxide = { version = "0.7.0", default-features = false, features = ["tokio-runtime"] }
 config = "0.15.11"
 database = { version = "0.1.0", path = "../crates/database" }
@@ -12,6 +14,7 @@ diesel-async = { version = "0.5.2", features = ["async-connection-wrapper", "dea
 futures = "0.3.31"
 html-image-comparer = "1.1.0"
 lapin = "2.5.3"
+s3-wrapper = { version = "0.1.0", path = "../crates/s3-wrapper" }
 serde = { version = "1.0.219", features = ["derive"] }
 tokio = { version = "1.44.2", features = ["full"] }
 uuid = { version = "1.16.0", features = ["v4"] }
