@@ -24,3 +24,28 @@ impl SubmissionHistory {
             .await
     }
 }
+
+pub struct UpdateSubmissionHistory {
+    pub id: Uuid,
+    pub score: f32,
+    pub compilation_error: Option<String>,
+}
+
+impl UpdateSubmissionHistory {
+    pub async fn update(self, connection: &mut AsyncPgConnection) -> QueryResult<()> {
+        use schema::submission_histories::dsl as s;
+
+        let affected_row_count = diesel::update(s::submission_histories.filter(s::id.eq(self.id)))
+            .set((
+                s::score.eq(self.score),
+                s::compilation_error.eq(self.compilation_error),
+            ))
+            .execute(connection)
+            .await?;
+        if affected_row_count != 1 {
+            Err(diesel::result::Error::NotFound)
+        } else {
+            Ok(())
+        }
+    }
+}
