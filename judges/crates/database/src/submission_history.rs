@@ -25,13 +25,13 @@ impl SubmissionHistory {
     }
 }
 
-pub struct UpdateSubmissionHistory {
+pub struct UpdateSubmissionHistory<'a> {
     pub id: Uuid,
     pub score: f32,
-    pub compilation_error: Option<String>,
+    pub compilation_error: Option<&'a str>,
 }
 
-impl UpdateSubmissionHistory {
+impl UpdateSubmissionHistory<'_> {
     pub async fn update(self, connection: &mut AsyncPgConnection) -> QueryResult<()> {
         use schema::submission_histories::dsl as s;
 
