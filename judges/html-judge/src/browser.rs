@@ -10,7 +10,6 @@ pub async fn spawn() -> Result<Browser> {
 
     let (browser, mut handler) = Browser::launch(browser_config).await?;
 
-    // spawn a new task that continuously polls the handler
     tokio::spawn(async move {
         loop {
             _ = handler.next().await;

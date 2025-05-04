@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::{path::PathBuf, sync::LazyLock};
 
 use serde::Deserialize;
 
@@ -10,16 +10,17 @@ fn default_amqp_url() -> String {
 pub struct Config {
     #[serde(default = "default_amqp_url")]
     pub amqp_url: String,
-
     pub id: String,
-
     pub html_queue_name: String,
 
     pub database_url: String,
 
     pub width: u32,
+    pub height: u32,
 
-    pub height: u32
+    pub s3_dir: PathBuf,
+    pub s3_bucket: String,
+    pub s3_max_retry_count: usize
 }
 
 pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
