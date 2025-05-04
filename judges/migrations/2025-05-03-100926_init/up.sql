@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS accounts(
 CREATE TABLE IF NOT EXISTS questions(
     id uuid PRIMARY KEY,
     room_id serial NOT NULl references rooms(id),
-    score int NOT NULL,
+    score real NOT NULL,
     time_limit int NOT NULL,
     memory_limit int NOT NULL
 );

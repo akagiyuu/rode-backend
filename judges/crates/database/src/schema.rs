@@ -26,7 +26,7 @@ diesel::table! {
     questions (id) {
         id -> Uuid,
         room_id -> Int4,
-        score -> Int4,
+        score -> Float4,
         time_limit -> Int4,
         memory_limit -> Int4,
     }
