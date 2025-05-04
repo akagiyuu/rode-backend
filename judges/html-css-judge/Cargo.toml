@@ -1,9 +1,0 @@
-[package]
-name = "html-css-judge"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-chromiumoxide = { version = "0.7.0", default-features = false, features = ["tokio-runtime"] }
-lapin = "2.5.3"
-tokio = { version = "1.44.2", features = ["full"] }
