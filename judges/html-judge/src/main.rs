@@ -1,16 +1,12 @@
 mod browser;
 mod config;
 
-use std::ops::DerefMut;
+use std::ops::{Deref, DerefMut};
 
 use anyhow::{Context, Result};
 use chromiumoxide::Browser;
 use config::CONFIG;
-use database::{Question, SubmissionHistory, TestCase, UpdateSubmissionHistory};
-use diesel_async::{
-    AsyncPgConnection,
-    pooled_connection::{AsyncDieselConnectionManager, deadpool::Pool},
-};
+use database::{deadpool_postgres, queries, tokio_postgres::NoTls};
 use futures::StreamExt;
 use lapin::{
     ConnectionProperties,
@@ -22,31 +18,24 @@ use uuid::Uuid;
 
 async fn process(
     delivery: Delivery,
+    database_client: &deadpool_postgres::Client,
     s3_client: &aws_sdk_s3::Client,
-    database: Pool<AsyncPgConnection>,
     browser: &Browser,
 ) -> Result<()> {
     let id = Uuid::from_slice(&delivery.data)?;
+    let submission = queries::submission::get()
+        .bind(database_client, &id)
+        .one()
+        .await?;
+    let question = queries::question::get()
+        .bind(database_client, &submission.question_id)
+        .one()
+        .await?;
+    let test_case = queries::test_case::get_by_question_id()
+        .bind(database_client, &submission.question_id)
+        .one()
+        .await?;
 
-    let page = browser.new_page("about:blank").await?;
-    let submission = SubmissionHistory::get(id, database.get().await?.deref_mut()).await?;
-
-    let (question, test_cases) = tokio::try_join!(
-        async {
-            let mut connection = database.get().await?;
-            let question = Question::get(submission.question_id, &mut connection).await?;
-
-            Ok::<_, anyhow::Error>(question)
-        },
-        async {
-            let mut connection = database.get().await?;
-            let test_cases =
-                TestCase::get_by_question_id(submission.question_id, &mut connection).await?;
-
-            Ok::<_, anyhow::Error>(test_cases)
-        },
-    )?;
-    let test_case = test_cases.first().context("No test case defined")?;
     let expected_image = s3_wrapper::download(
         &test_case.output_path,
         &CONFIG.s3_bucket,
@@ -56,7 +45,8 @@ async fn process(
     )
     .await?;
 
-    let update_data = match html_image_comparer::diff(
+    let page = browser.new_page("about:blank").await?;
+    match html_image_comparer::diff(
         &submission.code,
         &expected_image,
         CONFIG.width,
@@ -65,34 +55,42 @@ async fn process(
     )
     .await
     {
-        Ok((match_ratio, _)) => UpdateSubmissionHistory {
-            id,
-            score: match_ratio as f32 * question.score,
-            compilation_error: None,
-        },
+        Ok((match_ratio, _)) => {
+            queries::submission::update_status()
+                .bind(
+                    database_client,
+                    &(match_ratio as f32 * question.score),
+                    &None::<String>,
+                    &-1,
+                    &id,
+                )
+                .await?;
+        }
         Err(error) => {
             eprintln!("{:?}", error);
 
-            UpdateSubmissionHistory {
-                id,
-                score: 0.,
-                compilation_error: Some("Failed to run the html"),
-            }
+            queries::submission::update_status()
+                .bind(
+                    database_client,
+                    &0.,
+                    &Some("Failed to run the html".to_string()),
+                    &1,
+                    &id,
+                )
+                .await?;
         }
     };
-    update_data
-        .update(database.get().await?.deref_mut())
-        .await?;
 
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let mut database_config = deadpool_postgres::Config::new();
+    database_config.url = Some(CONFIG.database_url.clone());
+    let database = database_config.create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)?;
     let s3_client = aws_sdk_s3::Client::new(&aws_config::load_from_env().await);
-
-    let manager = AsyncDieselConnectionManager::new(&CONFIG.database_url);
-    let database = Pool::builder(manager).build()?;
+    let browser = browser::spawn().await?;
 
     let amqp_connection =
         lapin::Connection::connect(&CONFIG.amqp_url, ConnectionProperties::default()).await?;
@@ -106,13 +104,11 @@ async fn main() -> Result<()> {
         )
         .await?;
 
-    let browser = browser::spawn().await?;
-
     while let Some(delivery) = consumer.next().await {
         let delivery = delivery?;
         delivery.ack(BasicAckOptions::default()).await?;
 
-        if let Err(error) = process(delivery, &s3_client, database.clone(), &browser).await {
+        if let Err(error) = process(delivery, &database.get().await?, &s3_client, &browser).await {
             eprintln!("{:?}", error);
         }
     }
