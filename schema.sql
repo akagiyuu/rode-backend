@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS submissions(
     language smallint NOT NULL,
     code text NOT NULL,
     score real,
-    failed_test_case int,
+    failed_test_case int NOT NULL,
     error text,
     created_at timestamp NOT NULL DEFAULT now()
 );
