@@ -22,7 +22,7 @@ pub struct Config {
     pub s3_bucket: String,
     pub s3_max_retry_count: usize,
 
-    pub thread_count: usize
+    pub thread_count: usize,
 }
 
 pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
