@@ -1,9 +1,9 @@
---! get_submission
+--! get
 SELECT question_id, language, code
 FROM submissions
 WHERE id = :id;
 
---! update_submission_status
+--! update_status (error?)
 UPDATE submissions
 SET
     score = :score,
