@@ -1,8 +1,9 @@
-mod browser;
 mod config;
 
-use anyhow::Result;
-use chromiumoxide::Browser;
+use std::sync::Arc;
+
+use anyhow::{Result, anyhow};
+use chromiumoxide::{Browser, BrowserConfig, Page};
 use config::CONFIG;
 use database::{deadpool_postgres, queries, tokio_postgres::NoTls};
 use futures::StreamExt;
@@ -12,13 +13,31 @@ use lapin::{
     options::{BasicAckOptions, BasicConsumeOptions},
     types::FieldTable,
 };
+use tokio::task::JoinSet;
 use uuid::Uuid;
+
+pub async fn init_browser() -> Result<Browser> {
+    let browser_config = BrowserConfig::builder()
+        .with_head()
+        .build()
+        .map_err(|err| anyhow!(err))?;
+
+    let (browser, mut handler) = Browser::launch(browser_config).await?;
+
+    tokio::spawn(async move {
+        loop {
+            _ = handler.next().await;
+        }
+    });
+
+    Ok(browser)
+}
 
 async fn process(
     delivery: Delivery,
     database_client: &deadpool_postgres::Client,
     s3_client: &aws_sdk_s3::Client,
-    browser: &Browser,
+    page: &Page,
 ) -> Result<()> {
     let id = Uuid::from_slice(&delivery.data)?;
     let submission = queries::submission::get()
@@ -43,13 +62,12 @@ async fn process(
     )
     .await?;
 
-    let page = browser.new_page("about:blank").await?;
     match html_image_comparer::diff(
         &submission.code,
         &expected_image,
         CONFIG.width,
         CONFIG.height,
-        &page,
+        page,
     )
     .await
     {
@@ -87,26 +105,47 @@ async fn main() -> Result<()> {
     let mut database_config = deadpool_postgres::Config::new();
     database_config.url = Some(CONFIG.database_url.clone());
     let database = database_config.create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)?;
-    let s3_client = aws_sdk_s3::Client::new(&aws_config::load_from_env().await);
-    let browser = browser::spawn().await?;
+    let s3_client = Arc::new(aws_sdk_s3::Client::new(&aws_config::load_from_env().await));
+    let browser = init_browser().await?;
 
     let amqp_connection =
         lapin::Connection::connect(&CONFIG.amqp_url, ConnectionProperties::default()).await?;
     let channel = amqp_connection.create_channel().await?;
-    let mut consumer = channel
-        .basic_consume(
-            &CONFIG.html_queue_name,
-            &CONFIG.id,
-            BasicConsumeOptions::default(),
-            FieldTable::default(),
-        )
-        .await?;
 
-    while let Some(delivery) = consumer.next().await {
-        let delivery = delivery?;
-        delivery.ack(BasicAckOptions::default()).await?;
+    let mut join_set = JoinSet::new();
 
-        if let Err(error) = process(delivery, &database.get().await?, &s3_client, &browser).await {
+    for _ in 0..CONFIG.thread_count {
+        let mut consumer = channel
+            .basic_consume(
+                &CONFIG.html_queue_name,
+                &CONFIG.id,
+                BasicConsumeOptions::default(),
+                FieldTable::default(),
+            )
+            .await?;
+        let database = database.clone();
+        let s3_client = s3_client.clone();
+        let browser = browser.new_page("about:blank").await?;
+
+        join_set.spawn(async move {
+            while let Some(delivery) = consumer.next().await {
+                let delivery = delivery?;
+                delivery.ack(BasicAckOptions::default()).await?;
+
+                if let Err(error) =
+                    process(delivery, &database.get().await?, &s3_client, &browser).await
+                {
+                    eprintln!("{:?}", error);
+                }
+            }
+
+            Ok::<_, anyhow::Error>(())
+        });
+    }
+
+    while let Some(res) = join_set.join_next().await {
+        let res = res?;
+        if let Err(error) = res {
             eprintln!("{:?}", error);
         }
     }
