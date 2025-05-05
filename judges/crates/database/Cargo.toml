@@ -16,23 +16,23 @@ time = []
 [dependencies]
 ## Core dependencies
 # Postgres types
-postgres-types = { version = "0.2.9", features = ["derive"] }
+postgres-types = { workspace = true, features = ["derive"] }
 # Postgres interaction
-postgres-protocol = "0.6.8"
+postgres-protocol = { workspace = true }
 
 ## Types dependencies
 # UUID
-uuid = { version = "1.15.1", features = [] }
+uuid = { workspace = true, features = [] }
 
 # Postgres
-postgres = { version = "0.19.10", features = ["with-uuid-1"] }
+postgres = { workspace = true, features = ["with-uuid-1"] }
 
 ## Async client dependencies
 # Postgres async client
-tokio-postgres = { version = "0.7.13", features = ["with-uuid-1"] }
+tokio-postgres = { workspace = true, features = ["with-uuid-1"] }
 # Async utils
-futures = "0.3.31"
+futures = { workspace = true }
 
 ## Async features dependencies
 # Async connection pooling
-deadpool-postgres = { version = "0.14.1", optional = true }
+deadpool-postgres = { workspace = true, optional = true }

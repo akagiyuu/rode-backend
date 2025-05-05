@@ -6,4 +6,4 @@ edition = "2024"
 [dependencies]
 
 [build-dependencies]
-clorinde = { version = "0.14.4", package = "clorinde" }
+clorinde = { workspace = true }
