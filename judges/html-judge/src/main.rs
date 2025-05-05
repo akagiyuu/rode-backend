@@ -1,10 +1,9 @@
-mod browser;
 mod config;
 
 use std::sync::Arc;
 
-use anyhow::Result;
-use chromiumoxide::{Browser, Page};
+use anyhow::{Result, anyhow};
+use chromiumoxide::{Browser, BrowserConfig, Page};
 use config::CONFIG;
 use database::{deadpool_postgres, queries, tokio_postgres::NoTls};
 use futures::StreamExt;
@@ -17,11 +16,28 @@ use lapin::{
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
+pub async fn init_browser() -> Result<Browser> {
+    let browser_config = BrowserConfig::builder()
+        .with_head()
+        .build()
+        .map_err(|err| anyhow!(err))?;
+
+    let (browser, mut handler) = Browser::launch(browser_config).await?;
+
+    tokio::spawn(async move {
+        loop {
+            _ = handler.next().await;
+        }
+    });
+
+    Ok(browser)
+}
+
 async fn process(
     delivery: Delivery,
     database_client: &deadpool_postgres::Client,
     s3_client: &aws_sdk_s3::Client,
-    tab: &Page,
+    page: &Page,
 ) -> Result<()> {
     let id = Uuid::from_slice(&delivery.data)?;
     let submission = queries::submission::get()
@@ -46,13 +62,12 @@ async fn process(
     )
     .await?;
 
-    let page = browser.new_page("about:blank").await?;
     match html_image_comparer::diff(
         &submission.code,
         &expected_image,
         CONFIG.width,
         CONFIG.height,
-        &page,
+        page,
     )
     .await
     {
@@ -91,7 +106,7 @@ async fn main() -> Result<()> {
     database_config.url = Some(CONFIG.database_url.clone());
     let database = database_config.create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)?;
     let s3_client = Arc::new(aws_sdk_s3::Client::new(&aws_config::load_from_env().await));
-    let browser = browser::spawn().await?;
+    let browser = init_browser().await?;
 
     let amqp_connection =
         lapin::Connection::connect(&CONFIG.amqp_url, ConnectionProperties::default()).await?;
