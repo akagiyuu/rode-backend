@@ -2,3 +2,4 @@
 
 pub mod question;
 pub mod submission;
+pub mod test_case;
