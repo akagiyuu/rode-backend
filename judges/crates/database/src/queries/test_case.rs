@@ -3,13 +3,13 @@
 #[derive(Debug, Clone, PartialEq)]
 pub struct GetByQuestionId {
     pub id: uuid::Uuid,
-    pub input_path: String,
+    pub input_path: Option<String>,
     pub output_path: String,
     pub is_hidden: bool,
 }
 pub struct GetByQuestionIdBorrowed<'a> {
     pub id: uuid::Uuid,
-    pub input_path: &'a str,
+    pub input_path: Option<&'a str>,
     pub output_path: &'a str,
     pub is_hidden: bool,
 }
@@ -24,7 +24,7 @@ impl<'a> From<GetByQuestionIdBorrowed<'a>> for GetByQuestionId {
     ) -> Self {
         Self {
             id,
-            input_path: input_path.into(),
+            input_path: input_path.map(|v| v.into()),
             output_path: output_path.into(),
             is_hidden,
         }
