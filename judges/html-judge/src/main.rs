@@ -1,9 +1,7 @@
 mod browser;
 mod config;
 
-use std::ops::{Deref, DerefMut};
-
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chromiumoxide::Browser;
 use config::CONFIG;
 use database::{deadpool_postgres, queries, tokio_postgres::NoTls};
