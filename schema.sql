@@ -1,25 +1,24 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS rooms(
-    id serial PRIMARY KEY,
+    id uuid PRIMARY KEY,
     code character(12) NOT NULL UNIQUE,
-    kind int NOT NULL,
+    kind smallint NOT NULL,
     open_time timestamp NOT NULL,
     close_time timestamp NOT NULL,
     created_at timestamp NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS teams(
-    id serial PRIMARY KEY,
-    room_id serial NOT NULL references rooms(id),
+    id uuid PRIMARY KEY,
+    room_id uuid NOT NULL references rooms(id) ON DELETE CASCADE,
     name character varying(128) NOT NULL,
-    total_score real NOT NULL DEFAULT 0,
     penalty int NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS accounts(
     id uuid PRIMARY KEY,
-    team_id serial NOT NULL references teams(id),
+    team_id uuid NOT NULL references teams(id) ON DELETE CASCADE,
     full_name character varying(64) NOT NULL,
     student_id character varying(16) NOT NULL,
     email character varying(64) NOT NULL UNIQUE,
@@ -33,38 +32,38 @@ CREATE TABLE IF NOT EXISTS accounts(
 
 CREATE TABLE IF NOT EXISTS questions(
     id uuid PRIMARY KEY,
-    room_id serial NOT NULl references rooms(id),
+    room_id uuid NOT NULl references rooms(id) ON DELETE CASCADE,
     score real NOT NULL,
-    time_limit int NOT NULL,
-    memory_limit int NOT NULL
+    time_limit int, -- millisecond, only exist for BE
+    memory_limit int -- megabyte, only exist for BE
 );
 
 CREATE TABLE IF NOT EXISTS test_cases(
     id uuid PRIMARY KEY,
-    question_id uuid NOT NULL references questions(id),
-    input_path character varying(64) NOT NULL,
-    output_path character varying(64) NOT NULL,
+    question_id uuid NOT NULL references questions(id) ON DELETE CASCADE,
+    input_path character varying(128),
+    output_path character varying(128) NOT NULL,
     is_hidden boolean NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS submission_histories(
+CREATE TABLE IF NOT EXISTS submissions(
     id uuid PRIMARY KEY,
-    question_id uuid NOT NULL references questions(id),
-    team_id serial NOT NULL references teams(id),
-    language int NOT NULL,
+    question_id uuid NOT NULL references questions(id) ON DELETE CASCADE,
+    team_id uuid NOT NULL references teams(id) ON DELETE CASCADE,
+    language smallint NOT NULL,
     code text NOT NULL,
     score real,
-    compilation_error text,
+    failed_test_case int NOT NULL,
+    error text,
     created_at timestamp NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS submission_details(
-    submission_history_id uuid NOT NULL references submission_histories(id),
-    test_case_id uuid NOT NULL references test_cases(id),
+    id uuid PRIMARY KEY,
+    submission_id uuid NOT NULL references submissions(id) ON DELETE CASCADE,
     status int NOT NULL,
-    run_time int NOT NULL,
+    run_time int NOT NULL, -- millisecond
     stdout text,
     stderr text,
-
-    PRIMARY KEY (submission_history_id, test_case_id)
+    created_at timestamp NOT NULL DEFAULT now()
 );
