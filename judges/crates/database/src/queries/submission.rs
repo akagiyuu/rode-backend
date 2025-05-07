@@ -4,7 +4,7 @@
 pub struct UpdateStatusParams<T1: crate::StringSql> {
     pub score: f32,
     pub error: Option<T1>,
-    pub failed_test_case: i32,
+    pub failed_test_case: Option<i32>,
     pub id: uuid::Uuid,
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -135,7 +135,7 @@ impl UpdateStatusStmt {
         client: &'c C,
         score: &'a f32,
         error: &'a Option<T1>,
-        failed_test_case: &'a i32,
+        failed_test_case: &'a Option<i32>,
         id: &'a uuid::Uuid,
     ) -> Result<u64, tokio_postgres::Error> {
         let stmt = self.0.prepare(client).await?;

@@ -2,13 +2,13 @@
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GetByQuestionId {
-    pub id: uuid::Uuid,
+    pub index: i32,
     pub input_path: Option<String>,
     pub output_path: String,
     pub is_hidden: bool,
 }
 pub struct GetByQuestionIdBorrowed<'a> {
-    pub id: uuid::Uuid,
+    pub index: i32,
     pub input_path: Option<&'a str>,
     pub output_path: &'a str,
     pub is_hidden: bool,
@@ -16,14 +16,14 @@ pub struct GetByQuestionIdBorrowed<'a> {
 impl<'a> From<GetByQuestionIdBorrowed<'a>> for GetByQuestionId {
     fn from(
         GetByQuestionIdBorrowed {
-            id,
+            index,
             input_path,
             output_path,
             is_hidden,
         }: GetByQuestionIdBorrowed<'a>,
     ) -> Self {
         Self {
-            id,
+            index,
             input_path: input_path.map(|v| v.into()),
             output_path: output_path.into(),
             is_hidden,
@@ -98,7 +98,7 @@ where
 }
 pub fn get_by_question_id() -> GetByQuestionIdStmt {
     GetByQuestionIdStmt(crate::client::async_::Stmt::new(
-        "SELECT id, input_path, output_path, is_hidden FROM test_cases WHERE question_id = $1",
+        "SELECT index, input_path, output_path, is_hidden FROM test_cases WHERE question_id = $1 ORDER BY index",
     ))
 }
 pub struct GetByQuestionIdStmt(crate::client::async_::Stmt);
@@ -116,7 +116,7 @@ impl GetByQuestionIdStmt {
                 row: &tokio_postgres::Row,
             | -> Result<GetByQuestionIdBorrowed, tokio_postgres::Error> {
                 Ok(GetByQuestionIdBorrowed {
-                    id: row.try_get(0)?,
+                    index: row.try_get(0)?,
                     input_path: row.try_get(1)?,
                     output_path: row.try_get(2)?,
                     is_hidden: row.try_get(3)?,

@@ -2,11 +2,10 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TABLE IF NOT EXISTS rooms(
     id uuid PRIMARY KEY,
-    code character(12) NOT NULL UNIQUE,
+    code character(6) NOT NULL UNIQUE,
     kind smallint NOT NULL,
     open_time timestamp NOT NULL,
-    close_time timestamp NOT NULL,
-    created_at timestamp NOT NULL DEFAULT now()
+    close_time timestamp NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS teams(
@@ -26,13 +25,13 @@ CREATE TABLE IF NOT EXISTS accounts(
     phone character varying(12) NOT NULL,
     school character varying(128) NOT NULL,
     dob date NOT NULL,
-    is_banned boolean NOT NULL DEFAULT false,
-    created_at timestamp NOT NULL DEFAULT now()
+    is_banned boolean NOT NULL DEFAULT false
 );
 
 CREATE TABLE IF NOT EXISTS questions(
     id uuid PRIMARY KEY,
     room_id uuid NOT NULl references rooms(id) ON DELETE CASCADE,
+    description_path text NOT NULL,
     score real NOT NULL,
     time_limit int, -- millisecond, only exist for BE
     memory_limit int -- megabyte, only exist for BE
@@ -41,6 +40,7 @@ CREATE TABLE IF NOT EXISTS questions(
 CREATE TABLE IF NOT EXISTS test_cases(
     id uuid PRIMARY KEY,
     question_id uuid NOT NULL references questions(id) ON DELETE CASCADE,
+    index int NOT NULL,
     input_path character varying(128),
     output_path character varying(128) NOT NULL,
     is_hidden boolean NOT NULL
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS submissions(
     language smallint NOT NULL,
     code text NOT NULL,
     score real,
-    failed_test_case int NOT NULL,
+    failed_test_case int,
     error text,
     created_at timestamp NOT NULL DEFAULT now()
 );
@@ -61,9 +61,9 @@ CREATE TABLE IF NOT EXISTS submissions(
 CREATE TABLE IF NOT EXISTS submission_details(
     id uuid PRIMARY KEY,
     submission_id uuid NOT NULL references submissions(id) ON DELETE CASCADE,
+    index int NOT NULL,
     status int NOT NULL,
     run_time int NOT NULL, -- millisecond
     stdout text,
-    stderr text,
-    created_at timestamp NOT NULL DEFAULT now()
+    stderr text
 );
