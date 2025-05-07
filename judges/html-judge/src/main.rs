@@ -82,8 +82,8 @@ async fn process(
                 .bind(
                     database_client,
                     &(match_ratio as f32 * question.score),
-                    &None::<String>,
-                    &-1,
+                    &None::<&str>,
+                    &None,
                     &id,
                 )
                 .await?;
@@ -95,8 +95,8 @@ async fn process(
                 .bind(
                     database_client,
                     &0.,
-                    &Some("Failed to run the html".to_string()),
-                    &1,
+                    &Some("Failed to run the html"),
+                    &Some(1),
                     &id,
                 )
                 .await?;
