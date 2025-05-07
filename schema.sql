@@ -64,6 +64,6 @@ CREATE TABLE IF NOT EXISTS submission_details(
     index int NOT NULL,
     status int NOT NULL,
     run_time int NOT NULL, -- millisecond
-    stdout text,
-    stderr text
+    stdout text NOT NULL,
+    stderr text NOT NULL
 );
