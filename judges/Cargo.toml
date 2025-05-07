@@ -1,3 +1,26 @@
 [workspace]
 resolver = "3"
 members = ["algorithm-judge", "crates/database", "crates/s3-wrapper", "html-judge"]
+
+[workspace.dependencies]
+anyhow = "1.0.98"
+aws-config = "1.6.2"
+aws-sdk-s3 = "1.83.0"
+backon = "1.5.0"
+chromiumoxide = { version = "0.7.0", default-features = false }
+clorinde = "0.14.4"
+config = "0.15.11"
+database = { version = "0.1.0", path = "crates/database" }
+deadpool-postgres = "0.14.1"
+futures = "0.3.31"
+html-image-comparer = "1.1.0"
+lapin = "2.5.3"
+postgres = "0.19.10"
+postgres-protocol = "0.6.8"
+postgres-types = "0.2.9"
+s3-wrapper = { version = "0.1.0", path = "crates/s3-wrapper" }
+serde = "1.0.219"
+thiserror = "2.0.12"
+tokio = "1.44.2"
+tokio-postgres = "0.7.13"
+uuid = "1.16.0"

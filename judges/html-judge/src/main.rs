@@ -14,8 +14,13 @@ use lapin::{
     types::FieldTable,
 };
 use tokio::task::JoinSet;
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::{
+    EnvFilter, Layer, filter, fmt, layer::SubscriberExt, util::SubscriberInitExt,
+};
 use uuid::Uuid;
 
+#[tracing::instrument(err)]
 pub async fn init_browser() -> Result<Browser> {
     let browser_config = BrowserConfig::builder()
         .with_head()
@@ -33,6 +38,7 @@ pub async fn init_browser() -> Result<Browser> {
     Ok(browser)
 }
 
+#[tracing::instrument(err)]
 async fn process(
     delivery: Delivery,
     database_client: &deadpool_postgres::Client,
@@ -102,6 +108,22 @@ async fn process(
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .pretty()
+                .with_timer(fmt::time::ChronoLocal::rfc_3339())
+                .with_filter(filter::filter_fn(|metadata| {
+                    !metadata.target().contains("chromiumoxide")
+                })),
+        )
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
+
     let mut database_config = deadpool_postgres::Config::new();
     database_config.url = Some(CONFIG.database_url.clone());
     let database = database_config.create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)?;
@@ -135,7 +157,7 @@ async fn main() -> Result<()> {
                 if let Err(error) =
                     process(delivery, &database.get().await?, &s3_client, &browser).await
                 {
-                    eprintln!("{:?}", error);
+                    tracing::error!("{:?}", error);
                 }
             }
 
@@ -146,7 +168,7 @@ async fn main() -> Result<()> {
     while let Some(res) = join_set.join_next().await {
         let res = res?;
         if let Err(error) = res {
-            eprintln!("{:?}", error);
+            tracing::error!("{:?}", error);
         }
     }
 

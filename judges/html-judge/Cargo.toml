@@ -4,16 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0.98"
-aws-config = { version = "1.6.2", features = ["behavior-version-latest"] }
-aws-sdk-s3 = { version = "1.83.0", features = ["behavior-version-latest"] }
-chromiumoxide = { version = "0.7.0", default-features = false, features = ["tokio-runtime"] }
-config = "0.15.11"
-database = { version = "0.1.0", path = "../crates/database" }
-futures = "0.3.31"
-html-image-comparer = "1.1.0"
-lapin = "2.5.3"
-s3-wrapper = { version = "0.1.0", path = "../crates/s3-wrapper" }
-serde = { version = "1.0.219", features = ["derive"] }
-tokio = { version = "1.44.2", features = ["full"] }
-uuid = { version = "1.16.0", features = ["v4"] }
+anyhow = { workspace = true }
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
+chromiumoxide = { workspace = true, features = ["tokio-runtime"] }
+config = { workspace = true }
+database = { workspace = true }
+futures = { workspace = true }
+html-image-comparer = { workspace = true }
+lapin = { workspace = true }
+s3-wrapper = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["full"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["fmt", "chrono", "env-filter"] }
+uuid = { workspace = true, features = ["v4"] }
