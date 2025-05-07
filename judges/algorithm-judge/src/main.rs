@@ -75,6 +75,14 @@ fn get_language(language_raw: i16) -> Result<Language<'static>> {
     }
 }
 
+#[repr(i32)]
+enum Status {
+    Timeout,
+    RuntimeError,
+    WrongAnswer,
+    Accepted,
+}
+
 #[tracing::instrument(err)]
 async fn process(
     delivery: Delivery,
@@ -153,7 +161,7 @@ async fn process(
                             database_client,
                             &id,
                             &test_case.index,
-                            &0,
+                            &(Status::Timeout as i32),
                             &time_limit,
                             &"",
                             &"",
@@ -178,7 +186,15 @@ async fn process(
 
                 if !test_case.is_hidden {
                     queries::submission_detail::insert()
-                        .bind(database_client, &id, &test_case.index, &1, &0, &"", &"")
+                        .bind(
+                            database_client,
+                            &id,
+                            &test_case.index,
+                            &(Status::RuntimeError as i32),
+                            &0,
+                            &"",
+                            &"",
+                        )
                         .await?;
                 }
 
@@ -213,7 +229,7 @@ async fn process(
                         database_client,
                         &id,
                         &test_case.index,
-                        &2,
+                        &(Status::WrongAnswer as i32),
                         &(metrics.run_time.as_millis() as i32),
                         &metrics.stdout.to_str()?,
                         &metrics.stderr.to_str()?,
@@ -230,7 +246,7 @@ async fn process(
                     database_client,
                     &id,
                     &test_case.index,
-                    &3,
+                    &(Status::Accepted as i32),
                     &(metrics.run_time.as_millis() as i32),
                     &metrics.stdout.to_str()?,
                     &metrics.stderr.to_str()?,
