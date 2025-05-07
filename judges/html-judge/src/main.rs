@@ -2,6 +2,7 @@ mod config;
 
 use std::sync::Arc;
 
+use ::tracing::level_filters::LevelFilter;
 use anyhow::{Result, anyhow};
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use config::CONFIG;
@@ -14,14 +15,57 @@ use lapin::{
     types::FieldTable,
 };
 use tokio::task::JoinSet;
-use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{
     EnvFilter, Layer, filter, fmt, layer::SubscriberExt, util::SubscriberInitExt,
 };
 use uuid::Uuid;
 
+pub fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .pretty()
+                .with_timer(fmt::time::ChronoLocal::rfc_3339())
+                .with_filter(filter::filter_fn(|metadata| {
+                    !metadata.target().contains("chromiumoxide")
+                })),
+        )
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
+}
+
 #[tracing::instrument(err)]
-pub async fn init_browser() -> Result<Browser> {
+pub async fn create_amqp_channel() -> Result<lapin::Channel> {
+    let amqp_connection =
+        lapin::Connection::connect(&CONFIG.amqp_url, ConnectionProperties::default()).await?;
+    let channel = amqp_connection.create_channel().await?;
+
+    Ok(channel)
+}
+
+#[tracing::instrument(err)]
+pub fn connect_database() -> Result<deadpool_postgres::Pool> {
+    let mut database_config = deadpool_postgres::Config::new();
+    database_config.url = Some(CONFIG.database_url.clone());
+    let database = database_config.create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)?;
+
+    return Ok(database);
+}
+
+#[tracing::instrument(err)]
+pub async fn connect_s3() -> Result<Arc<aws_sdk_s3::Client>> {
+    let config = aws_config::load_from_env().await;
+    let client = aws_sdk_s3::Client::new(&config);
+
+    Ok(Arc::new(client))
+}
+
+#[tracing::instrument(err)]
+pub async fn create_browser() -> Result<Browser> {
     let browser_config = BrowserConfig::builder()
         .with_head()
         .build()
@@ -87,9 +131,8 @@ async fn process(
                     &id,
                 )
                 .await?;
-            Ok(())
         }
-        Err(error) => {
+        Err(_) => {
             queries::submission::update_status()
                 .bind(
                     database_client,
@@ -99,43 +142,25 @@ async fn process(
                     &id,
                 )
                 .await?;
-            Err(error.into())
         }
-    }
+    };
+
+    Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::fmt::layer()
-                .pretty()
-                .with_timer(fmt::time::ChronoLocal::rfc_3339())
-                .with_filter(filter::filter_fn(|metadata| {
-                    !metadata.target().contains("chromiumoxide")
-                })),
-        )
-        .with(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::INFO.into())
-                .from_env_lossy(),
-        )
-        .init();
+    init_tracing();
 
-    let mut database_config = deadpool_postgres::Config::new();
-    database_config.url = Some(CONFIG.database_url.clone());
-    let database = database_config.create_pool(Some(deadpool_postgres::Runtime::Tokio1), NoTls)?;
-    let s3_client = Arc::new(aws_sdk_s3::Client::new(&aws_config::load_from_env().await));
-    let browser = init_browser().await?;
-
-    let amqp_connection =
-        lapin::Connection::connect(&CONFIG.amqp_url, ConnectionProperties::default()).await?;
-    let channel = amqp_connection.create_channel().await?;
+    let amqp_channel = create_amqp_channel().await?;
+    let database = connect_database()?;
+    let s3_client = connect_s3().await?;
+    let browser = create_browser().await?;
 
     let mut join_set = JoinSet::new();
 
     for _ in 0..CONFIG.thread_count {
-        let mut consumer = channel
+        let mut consumer = amqp_channel
             .basic_consume(
                 &CONFIG.html_queue_name,
                 &CONFIG.id,
@@ -152,11 +177,7 @@ async fn main() -> Result<()> {
                 let delivery = delivery?;
                 delivery.ack(BasicAckOptions::default()).await?;
 
-                if let Err(error) =
-                    process(delivery, &database.get().await?, &s3_client, &browser).await
-                {
-                    tracing::error!("{:?}", error);
-                }
+                let _ = process(delivery, &database.get().await?, &s3_client, &browser).await;
             }
 
             Ok::<_, anyhow::Error>(())
