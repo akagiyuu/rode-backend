@@ -2,7 +2,7 @@ mod config;
 
 use std::sync::Arc;
 
-use ::tracing::level_filters::LevelFilter;
+use tracing::level_filters::LevelFilter;
 use anyhow::{Result, anyhow};
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use config::CONFIG;
