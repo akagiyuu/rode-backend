@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 use bstr::ByteSlice;
 use code_executor::{CPP, JAVA, Language, PYTHON, Runner};
 use config::CONFIG;
-use database::{deadpool_postgres, queries, tokio_postgres::NoTls};
+use database::{client::Params, deadpool_postgres, queries, tokio_postgres::NoTls};
 use futures::StreamExt;
 use lapin::{
     ConnectionProperties,
@@ -147,24 +147,28 @@ async fn process(
             Ok(metrics) => metrics,
             Err(code_executor::Error::Timeout) => {
                 queries::submission::update_status()
-                    .bind(
+                    .params(
                         database_client,
-                        &0.,
-                        &Some(format!("Time limit exceeded on test {}", test_case.index)),
-                        &Some(test_case.index),
-                        &id,
+                        &queries::submission::UpdateStatusParams {
+                            id,
+                            score: 0.,
+                            error: Some(format!("Time limit exceeded on test {}", test_case.index)),
+                            failed_test_case: Some(test_case.index),
+                        },
                     )
                     .await?;
                 if !test_case.is_hidden {
                     queries::submission_detail::insert()
-                        .bind(
+                        .params(
                             database_client,
-                            &id,
-                            &test_case.index,
-                            &(Status::Timeout as i32),
-                            &time_limit,
-                            &"",
-                            &"",
+                            &queries::submission_detail::InsertParams {
+                                submission_id: id,
+                                index: test_case.index,
+                                status: Status::Timeout as i32,
+                                run_time: time_limit,
+                                stdout: "",
+                                stderr: "",
+                            },
                         )
                         .await?;
                 }
@@ -175,25 +179,29 @@ async fn process(
                 tracing::info!("Runtime error on test {}: {}", test_case.index, message);
 
                 queries::submission::update_status()
-                    .bind(
+                    .params(
                         database_client,
-                        &0.,
-                        &Some(format!("Runtime error on test {}", test_case.index)),
-                        &Some(test_case.index),
-                        &id,
+                        &queries::submission::UpdateStatusParams {
+                            id,
+                            score: 0.,
+                            error: Some(format!("Runtime error on test {}", test_case.index)),
+                            failed_test_case: Some(test_case.index),
+                        },
                     )
                     .await?;
 
                 if !test_case.is_hidden {
                     queries::submission_detail::insert()
-                        .bind(
+                        .params(
                             database_client,
-                            &id,
-                            &test_case.index,
-                            &(Status::RuntimeError as i32),
-                            &0,
-                            &"",
-                            &"",
+                            &queries::submission_detail::InsertParams {
+                                submission_id: id,
+                                index: test_case.index,
+                                status: Status::RuntimeError as i32,
+                                run_time: 0,
+                                stdout: "",
+                                stderr: "",
+                            },
                         )
                         .await?;
                 }
@@ -214,25 +222,29 @@ async fn process(
 
         if metrics.stdout.trim() != expected_output.trim() {
             queries::submission::update_status()
-                .bind(
+                .params(
                     database_client,
-                    &0.,
-                    &Some(format!("Wrong answer on test {}", test_case.index)),
-                    &Some(test_case.index),
-                    &id,
+                    &queries::submission::UpdateStatusParams {
+                        id,
+                        score: 0.,
+                        error: Some(format!("Wrong answer on test {}", test_case.index)),
+                        failed_test_case: Some(test_case.index),
+                    },
                 )
                 .await?;
 
             if !test_case.is_hidden {
                 queries::submission_detail::insert()
-                    .bind(
+                    .params(
                         database_client,
-                        &id,
-                        &test_case.index,
-                        &(Status::WrongAnswer as i32),
-                        &(metrics.run_time.as_millis() as i32),
-                        &metrics.stdout.to_str()?,
-                        &metrics.stderr.to_str()?,
+                        &queries::submission_detail::InsertParams {
+                            submission_id: id,
+                            index: test_case.index,
+                            status: Status::WrongAnswer as i32,
+                            run_time: metrics.run_time.as_millis() as i32,
+                            stdout: metrics.stdout.to_str()?,
+                            stderr: metrics.stderr.to_str()?,
+                        },
                     )
                     .await?;
             }
@@ -242,26 +254,30 @@ async fn process(
 
         if !test_case.is_hidden {
             queries::submission_detail::insert()
-                .bind(
+                .params(
                     database_client,
-                    &id,
-                    &test_case.index,
-                    &(Status::Accepted as i32),
-                    &(metrics.run_time.as_millis() as i32),
-                    &metrics.stdout.to_str()?,
-                    &metrics.stderr.to_str()?,
+                    &queries::submission_detail::InsertParams {
+                        submission_id: id,
+                        index: test_case.index,
+                        status: Status::Accepted as i32,
+                        run_time: metrics.run_time.as_millis() as i32,
+                        stdout: metrics.stdout.to_str()?,
+                        stderr: metrics.stderr.to_str()?,
+                    },
                 )
                 .await?;
         }
     }
 
     queries::submission::update_status()
-        .bind(
+        .params(
             database_client,
-            &question.score,
-            &Some("Accepted"),
-            &None,
-            &id,
+            &queries::submission::UpdateStatusParams::<&str> {
+                id,
+                score: question.score,
+                error: None,
+                failed_test_case: None,
+            },
         )
         .await?;
 
