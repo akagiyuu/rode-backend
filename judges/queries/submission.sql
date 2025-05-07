@@ -3,7 +3,7 @@ SELECT question_id, language, code
 FROM submissions
 WHERE id = :id;
 
---! update_status (error?)
+--! update_status (error?, failed_test_case?)
 UPDATE submissions
 SET
     score = :score,
