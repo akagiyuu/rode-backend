@@ -87,10 +87,9 @@ async fn process(
                     &id,
                 )
                 .await?;
+            Ok(())
         }
         Err(error) => {
-            eprintln!("{:?}", error);
-
             queries::submission::update_status()
                 .bind(
                     database_client,
@@ -100,10 +99,9 @@ async fn process(
                     &id,
                 )
                 .await?;
+            Err(error.into())
         }
-    };
-
-    Ok(())
+    }
 }
 
 #[tokio::main]
@@ -166,10 +164,7 @@ async fn main() -> Result<()> {
     }
 
     while let Some(res) = join_set.join_next().await {
-        let res = res?;
-        if let Err(error) = res {
-            tracing::error!("{:?}", error);
-        }
+        let _ = res?;
     }
 
     Ok(())
