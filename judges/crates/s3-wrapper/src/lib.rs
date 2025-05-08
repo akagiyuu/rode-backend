@@ -1,5 +1,5 @@
+use anyhow::{Context, Result};
 use foyer::{Engine, HybridCache, HybridCacheBuilder};
-use anyhow::Result;
 
 pub struct Client {
     client: aws_sdk_s3::Client,
@@ -24,12 +24,18 @@ impl Client {
         })
     }
 
-    async fn _get(&self, key: &str) -> Result<Vec<u8>> {
+    pub async fn get(&self, key: String) -> Result<Vec<u8>> {
+        if self.cache.contains(&key) {
+            let entry = self.cache.get(&key).await?.context("Cache missed")?;
+
+            return Ok(entry.value().clone());
+        }
+
         let response = self
             .client
             .get_object()
             .bucket(&self.bucket)
-            .key(key)
+            .key(&key)
             .send()
             .await
             .map_err(aws_sdk_s3::Error::from)?;
@@ -41,12 +47,8 @@ impl Client {
             .map_err(anyhow::Error::from)?
             .to_vec();
 
-        Ok(data)
-    }
+        let entry = self.cache.insert(key, data);
 
-    pub async fn get(&self, key: String) -> Result<Vec<u8>> {
-        self.cache.fetch(key, || async move { self._get(&key).await });
-
-        todo!()
+        Ok(entry.value().clone())
     }
 }
