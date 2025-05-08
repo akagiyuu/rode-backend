@@ -1240,9 +1240,9 @@ dependencies = [
 
 [[package]]
 name = "code-executor"
-version = "2.4.0"
+version = "2.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3bf5e7015fcbf21affe8889bf1c21592f6497b0ed5908a2b5f657d975890145"
+checksum = "7c137fb3304aa9cc5f1015bd7afbc9b4c65a57dc10b2832aab1a93691747802d"
 dependencies = [
  "cgroups-rs",
  "libseccomp",
