@@ -28,7 +28,7 @@ impl Client {
         })
     }
 
-    pub async fn get(&self, key: &str) -> Result<Vec<u8>> {
+    async fn _get(&self, key: &str) -> Result<Vec<u8>> {
         let response = self
             .client
             .get_object()
@@ -46,5 +46,11 @@ impl Client {
             .to_vec();
 
         Ok(data)
+    }
+
+    pub async fn get(&self, key: String) -> Result<Vec<u8>> {
+        self.cache.fetch(key, || async move { self._get(&key).await });
+
+        todo!()
     }
 }
