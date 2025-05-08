@@ -1,7 +1,6 @@
 mod config;
 
 use std::{
-    ops::Deref,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -130,10 +129,10 @@ async fn init_runner<'a>(
 }
 
 enum TestCaseResult {
-    Timeout = 0,
-    RuntimeError = 1,
-    WrongAnswer(Metrics) = 2,
-    Accepted(Metrics) = 3,
+    Timeout,
+    RuntimeError,
+    WrongAnswer(Metrics),
+    Accepted(Metrics),
 }
 
 impl TestCaseResult {
