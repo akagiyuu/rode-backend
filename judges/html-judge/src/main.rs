@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use config::CONFIG;
-use database::{deadpool_postgres, queries, tokio_postgres::NoTls};
+use database::{client::Params, deadpool_postgres, queries, tokio_postgres::NoTls};
 use futures::StreamExt;
 use lapin::{
     ConnectionProperties,
@@ -106,7 +106,7 @@ async fn process(
 
     let expected_image = s3_client.get(test_case.output_path.clone()).await?;
 
-    match html_image_comparer::diff(
+    let update_status_params = match html_image_comparer::diff(
         &submission.code,
         &expected_image,
         CONFIG.width,
@@ -115,29 +115,22 @@ async fn process(
     )
     .await
     {
-        Ok((match_ratio, _)) => {
-            queries::submission::update_status()
-                .bind(
-                    database_client,
-                    &(match_ratio as f32 * question.score),
-                    &None::<&str>,
-                    &None,
-                    &id,
-                )
-                .await?;
-        }
-        Err(_) => {
-            queries::submission::update_status()
-                .bind(
-                    database_client,
-                    &0.,
-                    &Some("Failed to run the html"),
-                    &Some(1),
-                    &id,
-                )
-                .await?;
-        }
+        Ok((match_ratio, _)) => queries::submission::UpdateStatusParams {
+            id,
+            score: match_ratio as f32 * question.score,
+            error: None,
+            failed_test_case: None,
+        },
+        Err(_) => queries::submission::UpdateStatusParams {
+            id,
+            score: 0.,
+            error: Some("Failed to run the html"),
+            failed_test_case: Some(1),
+        },
     };
+    queries::submission::update_status()
+        .params(database_client, &update_status_params)
+        .await?;
 
     Ok(())
 }
