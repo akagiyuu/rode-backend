@@ -95,14 +95,20 @@ async fn process(
         .bind(database_client, &id)
         .one()
         .await?;
-    let question = queries::question::get()
-        .bind(database_client, &submission.question_id)
-        .one()
-        .await?;
-    let test_case = queries::test_case::get_by_question_id()
-        .bind(database_client, &submission.question_id)
-        .one()
-        .await?;
+    let (question, test_case) = tokio::try_join!(
+        async {
+            queries::question::get()
+                .bind(database_client, &submission.question_id)
+                .one()
+                .await
+        },
+        async {
+            queries::test_case::get_by_question_id()
+                .bind(database_client, &submission.question_id)
+                .one()
+                .await
+        }
+    )?;
 
     let expected_image = s3_client.get(test_case.output_path.clone()).await?;
 

@@ -253,18 +253,25 @@ async fn process(
         .await?;
     let language = get_language(submission.language)?;
 
-    let project_path = compile(id, language, submission.code.as_bytes(), database_client).await?;
+    let (project_path, question) = tokio::try_join!(
+        compile(id, language, submission.code.as_bytes(), database_client),
+        async {
+            queries::question::get()
+                .bind(database_client, &submission.question_id)
+                .one()
+                .await
+                .map_err(anyhow::Error::from)
+        }
+    )?;
 
-    let question = queries::question::get()
-        .bind(database_client, &submission.question_id)
-        .one()
-        .await?;
-    let runner = init_runner(&question, language, &project_path).await?;
-
-    let test_cases = queries::test_case::get_by_question_id()
-        .bind(database_client, &submission.question_id)
-        .iter()
-        .await?;
+    let (runner, test_cases) =
+        tokio::try_join!(init_runner(&question, language, &project_path), async {
+            queries::test_case::get_by_question_id()
+                .bind(database_client, &submission.question_id)
+                .iter()
+                .await
+                .map_err(anyhow::Error::from)
+        })?;
     tokio::pin!(test_cases);
 
     while let Some(test_case) = test_cases.next().await {
