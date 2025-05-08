@@ -1,5 +1,3 @@
-mod error;
-
 use std::path::Path;
 
 use aws_sdk_s3::Client;
