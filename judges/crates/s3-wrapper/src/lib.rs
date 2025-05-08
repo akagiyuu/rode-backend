@@ -1,9 +1,5 @@
-mod error;
-
 use foyer::{Engine, HybridCache, HybridCacheBuilder};
-
-pub use error::Error;
-pub type Result<T> = std::result::Result<T, Error>;
+use anyhow::Result;
 
 pub struct Client {
     client: aws_sdk_s3::Client,
