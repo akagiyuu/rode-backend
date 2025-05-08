@@ -158,7 +158,7 @@ impl TestCaseResult {
     async fn save(
         &self,
         submission_id: Uuid,
-        test_case: queries::test_case::GetByQuestionId,
+        test_case: &queries::test_case::GetByQuestionId,
         time_limit: Duration,
         database_client: &deadpool_postgres::Client,
     ) -> Result<()> {
@@ -206,13 +206,16 @@ impl TestCaseResult {
 #[tracing::instrument(err)]
 async fn run(
     submission_id: Uuid,
-    test_case: queries::test_case::GetByQuestionId,
+    test_case: &queries::test_case::GetByQuestionId,
     project_path: &Path,
     runner: &Runner<'_>,
     database_client: &deadpool_postgres::Client,
     s3_client: &aws_sdk_s3::Client,
 ) -> Result<TestCaseResult> {
-    let input_path = test_case.input_path.context("Input must be specified")?;
+    let input_path = test_case
+        .input_path
+        .as_ref()
+        .context("Input must be specified")?;
 
     let input = download(
         &CONFIG.s3_bucket,
@@ -281,15 +284,36 @@ async fn process(
 
     while let Some(test_case) = test_cases.next().await {
         let test_case = test_case?;
+
         let test_case_result = run(
             id,
-            test_case,
+            &test_case,
             &project_path,
             &runner,
             database_client,
             s3_client,
         )
         .await?;
+        test_case_result
+            .save(id, &test_case, runner.time_limit, database_client)
+            .await?;
+        if matches!(test_case_result, TestCaseResult::Accepted(_)) {
+            continue;
+        }
+
+        queries::submission::update_status()
+            .params(
+                database_client,
+                &queries::submission::UpdateStatusParams {
+                    id,
+                    score: 0.,
+                    error: Some(test_case_result.as_error(test_case.index)),
+                    failed_test_case: Some(test_case.index),
+                },
+            )
+            .await?;
+
+        return Ok(());
     }
 
     queries::submission::update_status()
