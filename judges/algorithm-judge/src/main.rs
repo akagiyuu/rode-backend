@@ -1,6 +1,7 @@
 mod config;
 
 use std::{
+    ops::Deref,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -8,7 +9,7 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use bstr::ByteSlice;
-use code_executor::{CPP, JAVA, Language, PYTHON, Runner};
+use code_executor::{CPP, JAVA, Language, Metrics, PYTHON, Runner};
 use config::CONFIG;
 use database::{client::Params, deadpool_postgres, queries, tokio_postgres::NoTls};
 use futures::StreamExt;
@@ -79,14 +80,6 @@ fn get_language(language_raw: i16) -> Result<Language<'static>> {
     }
 }
 
-#[repr(i32)]
-enum Status {
-    Timeout,
-    RuntimeError,
-    WrongAnswer,
-    Accepted,
-}
-
 #[tracing::instrument(err)]
 async fn compile(
     submission_id: Uuid,
@@ -136,6 +129,76 @@ async fn init_runner<'a>(
     Ok(runner)
 }
 
+enum TestCaseResult {
+    Timeout = 0,
+    RuntimeError = 1,
+    WrongAnswer(Metrics) = 2,
+    Accepted(Metrics) = 3,
+}
+
+impl TestCaseResult {
+    fn as_error(&self, test_case_index: i32) -> String {
+        match self {
+            TestCaseResult::Timeout => format!("Time limit exceeded on test {}", test_case_index),
+            TestCaseResult::RuntimeError => format!("Runtime error on test {}", test_case_index),
+            TestCaseResult::WrongAnswer(_) => format!("Wrong answer on test {}", test_case_index),
+            _ => unreachable!(),
+        }
+    }
+
+    fn as_database_enum(&self) -> i32 {
+        match self {
+            TestCaseResult::Timeout => 0,
+            TestCaseResult::RuntimeError => 1,
+            TestCaseResult::WrongAnswer(_) => 2,
+            TestCaseResult::Accepted(_) => 3,
+        }
+    }
+
+    async fn save(
+        &self,
+        submission_id: Uuid,
+        test_case: queries::test_case::GetByQuestionId,
+        time_limit: Duration,
+        database_client: &deadpool_postgres::Client,
+    ) -> Result<()> {
+        let params = match self {
+            TestCaseResult::Timeout => queries::submission_detail::InsertParams {
+                submission_id,
+                index: test_case.index,
+                status: self.as_database_enum(),
+                run_time: time_limit.as_millis() as i32,
+                stdout: "",
+                stderr: "",
+            },
+            TestCaseResult::RuntimeError => queries::submission_detail::InsertParams {
+                submission_id,
+                index: test_case.index,
+                status: self.as_database_enum(),
+                run_time: 0,
+                stdout: "",
+                stderr: "",
+            },
+            TestCaseResult::WrongAnswer(metrics) | TestCaseResult::Accepted(metrics) => {
+                queries::submission_detail::InsertParams {
+                    submission_id,
+                    index: test_case.index,
+                    status: self.as_database_enum(),
+                    run_time: metrics.run_time.as_millis() as i32,
+                    stdout: metrics.stdout.to_str()?,
+                    stderr: metrics.stderr.to_str()?,
+                }
+            }
+        };
+
+        queries::submission_detail::insert()
+            .params(database_client, &params)
+            .await?;
+
+        Ok(())
+    }
+}
+
 #[tracing::instrument(err)]
 async fn run(
     submission_id: Uuid,
@@ -144,7 +207,7 @@ async fn run(
     runner: &Runner<'_>,
     database_client: &deadpool_postgres::Client,
     s3_client: &aws_sdk_s3::Client,
-) -> Result<()> {
+) -> Result<TestCaseResult> {
     let input_path = test_case.input_path.context("Input must be specified")?;
 
     let input = download(
@@ -159,67 +222,12 @@ async fn run(
     let metrics = match runner.run(&input).await {
         Ok(metrics) => metrics,
         Err(code_executor::Error::Timeout) => {
-            queries::submission::update_status()
-                .params(
-                    database_client,
-                    &queries::submission::UpdateStatusParams {
-                        id: submission_id,
-                        score: 0.,
-                        error: Some(format!("Time limit exceeded on test {}", test_case.index)),
-                        failed_test_case: Some(test_case.index),
-                    },
-                )
-                .await?;
-            if !test_case.is_hidden {
-                queries::submission_detail::insert()
-                    .params(
-                        database_client,
-                        &queries::submission_detail::InsertParams {
-                            submission_id,
-                            index: test_case.index,
-                            status: Status::Timeout as i32,
-                            run_time: runner.time_limit.as_millis() as i32,
-                            stdout: "",
-                            stderr: "",
-                        },
-                    )
-                    .await?;
-            }
-
-            return Ok(());
+            return Ok(TestCaseResult::Timeout);
         }
         Err(code_executor::Error::Runtime { message }) => {
-            tracing::info!("Runtime error on test {}: {}", test_case.index, message);
+            tracing::info!("Runtime error on tdest {}: {}", test_case.index, message);
 
-            queries::submission::update_status()
-                .params(
-                    database_client,
-                    &queries::submission::UpdateStatusParams {
-                        id: submission_id,
-                        score: 0.,
-                        error: Some(format!("Runtime error on test {}", test_case.index)),
-                        failed_test_case: Some(test_case.index),
-                    },
-                )
-                .await?;
-
-            if !test_case.is_hidden {
-                queries::submission_detail::insert()
-                    .params(
-                        database_client,
-                        &queries::submission_detail::InsertParams {
-                            submission_id,
-                            index: test_case.index,
-                            status: Status::RuntimeError as i32,
-                            run_time: 0,
-                            stdout: "",
-                            stderr: "",
-                        },
-                    )
-                    .await?;
-            }
-
-            return Ok(());
+            return Ok(TestCaseResult::RuntimeError);
         }
         Err(error) => bail!(error),
     };
@@ -234,54 +242,10 @@ async fn run(
     .await?;
 
     if metrics.stdout.trim() != expected_output.trim() {
-        queries::submission::update_status()
-            .params(
-                database_client,
-                &queries::submission::UpdateStatusParams {
-                    id: submission_id,
-                    score: 0.,
-                    error: Some(format!("Wrong answer on test {}", test_case.index)),
-                    failed_test_case: Some(test_case.index),
-                },
-            )
-            .await?;
-
-        if !test_case.is_hidden {
-            queries::submission_detail::insert()
-                .params(
-                    database_client,
-                    &queries::submission_detail::InsertParams {
-                        submission_id,
-                        index: test_case.index,
-                        status: Status::WrongAnswer as i32,
-                        run_time: metrics.run_time.as_millis() as i32,
-                        stdout: metrics.stdout.to_str()?,
-                        stderr: metrics.stderr.to_str()?,
-                    },
-                )
-                .await?;
-        }
-
-        return Ok(());
+        Ok(TestCaseResult::WrongAnswer(metrics))
+    } else {
+        Ok(TestCaseResult::Accepted(metrics))
     }
-
-    if !test_case.is_hidden {
-        queries::submission_detail::insert()
-            .params(
-                database_client,
-                &queries::submission_detail::InsertParams {
-                    submission_id,
-                    index: test_case.index,
-                    status: Status::Accepted as i32,
-                    run_time: metrics.run_time.as_millis() as i32,
-                    stdout: metrics.stdout.to_str()?,
-                    stderr: metrics.stderr.to_str()?,
-                },
-            )
-            .await?;
-    }
-
-    Ok(())
 }
 
 #[tracing::instrument(err)]
@@ -313,7 +277,7 @@ async fn process(
 
     while let Some(test_case) = test_cases.next().await {
         let test_case = test_case?;
-        run(
+        let test_case_result = run(
             id,
             test_case,
             &project_path,
