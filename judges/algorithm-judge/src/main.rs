@@ -218,8 +218,8 @@ async fn run(
 
     let input = download(
         &CONFIG.s3_bucket,
-        &input_path,
-        &CONFIG.s3_dir.join(&input_path),
+        input_path,
+        &CONFIG.s3_dir.join(input_path),
         CONFIG.s3_max_retry_count,
         s3_client,
     )
@@ -241,7 +241,7 @@ async fn run(
     let expected_output = download(
         &CONFIG.s3_bucket,
         &test_case.output_path,
-        &CONFIG.s3_dir.join(&input_path),
+        &CONFIG.s3_dir.join(input_path),
         CONFIG.s3_max_retry_count,
         s3_client,
     )
