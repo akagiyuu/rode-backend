@@ -1,10 +1,6 @@
 mod error;
 
-use std::path::Path;
-
-use backon::{ExponentialBuilder, Retryable};
 use foyer::{Engine, HybridCache, HybridCacheBuilder};
-use tokio::{fs, io::AsyncWriteExt};
 
 pub use error::Error;
 pub type Result<T> = std::result::Result<T, Error>;
@@ -32,22 +28,23 @@ impl Client {
         })
     }
 
-    pub async fn get(&self, key: &str) -> Result<Vec<u8>, Error> {
+    pub async fn get(&self, key: &str) -> Result<Vec<u8>> {
         let response = self
             .client
             .get_object()
-            .bucket(self.bucket)
+            .bucket(&self.bucket)
             .key(key)
             .send()
-            .await?;
+            .await
+            .map_err(aws_sdk_s3::Error::from)?;
 
-        let file = response
+        let data = response
             .body
             .collect()
             .await
-            .map_err(std::io::Error::from)?
-            .into_bytes();
+            .map_err(anyhow::Error::from)?
+            .to_vec();
 
-        todo!()
+        Ok(data)
     }
 }
