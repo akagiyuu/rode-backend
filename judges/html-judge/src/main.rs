@@ -2,7 +2,6 @@ mod config;
 
 use std::sync::Arc;
 
-use tracing::level_filters::LevelFilter;
 use anyhow::{Result, anyhow};
 use chromiumoxide::{Browser, BrowserConfig, Page};
 use config::CONFIG;
@@ -15,6 +14,7 @@ use lapin::{
     types::FieldTable,
 };
 use tokio::task::JoinSet;
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{
     EnvFilter, Layer, filter, fmt, layer::SubscriberExt, util::SubscriberInitExt,
 };
@@ -57,9 +57,10 @@ pub fn connect_database() -> Result<deadpool_postgres::Pool> {
 }
 
 #[tracing::instrument(err)]
-pub async fn connect_s3() -> Result<Arc<aws_sdk_s3::Client>> {
+pub async fn connect_s3() -> Result<Arc<s3_wrapper::Client>> {
     let config = aws_config::load_from_env().await;
     let client = aws_sdk_s3::Client::new(&config);
+    let client = s3_wrapper::Client::new(client, CONFIG.s3_bucket.clone()).await?;
 
     Ok(Arc::new(client))
 }
@@ -86,7 +87,7 @@ pub async fn create_browser() -> Result<Browser> {
 async fn process(
     delivery: Delivery,
     database_client: &deadpool_postgres::Client,
-    s3_client: &aws_sdk_s3::Client,
+    s3_client: &s3_wrapper::Client,
     page: &Page,
 ) -> Result<()> {
     let id = Uuid::from_slice(&delivery.data)?;
@@ -103,14 +104,7 @@ async fn process(
         .one()
         .await?;
 
-    let expected_image = s3_wrapper::download(
-        &test_case.output_path,
-        &CONFIG.s3_bucket,
-        &CONFIG.s3_dir.join(&test_case.output_path),
-        CONFIG.s3_max_retry_count,
-        s3_client,
-    )
-    .await?;
+    let expected_image = s3_client.get(test_case.output_path.clone()).await?;
 
     match html_image_comparer::diff(
         &submission.code,

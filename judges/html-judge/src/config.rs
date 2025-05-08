@@ -18,9 +18,7 @@ pub struct Config {
     pub width: u32,
     pub height: u32,
 
-    pub s3_dir: PathBuf,
     pub s3_bucket: String,
-    pub s3_max_retry_count: usize,
 
     pub thread_count: usize,
 }

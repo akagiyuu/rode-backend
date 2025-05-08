@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::LazyLock};
+use std::sync::LazyLock;
 
 use serde::Deserialize;
 
@@ -15,9 +15,7 @@ pub struct Config {
 
     pub database_url: String,
 
-    pub s3_dir: PathBuf,
     pub s3_bucket: String,
-    pub s3_max_retry_count: usize,
 
     pub thread_count: usize,
 }

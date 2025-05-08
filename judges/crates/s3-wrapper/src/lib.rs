@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use foyer::{Engine, HybridCache, HybridCacheBuilder};
 
+#[derive(Debug)]
 pub struct Client {
     client: aws_sdk_s3::Client,
     bucket: String,

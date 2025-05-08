@@ -18,7 +18,6 @@ use lapin::{
     options::{BasicAckOptions, BasicConsumeOptions},
     types::FieldTable,
 };
-use s3_wrapper::download;
 use tokio::task::JoinSet;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{
@@ -63,9 +62,10 @@ pub fn connect_database() -> Result<deadpool_postgres::Pool> {
 }
 
 #[tracing::instrument(err)]
-pub async fn connect_s3() -> Result<Arc<aws_sdk_s3::Client>> {
+pub async fn connect_s3() -> Result<Arc<s3_wrapper::Client>> {
     let config = aws_config::load_from_env().await;
     let client = aws_sdk_s3::Client::new(&config);
+    let client = s3_wrapper::Client::new(client, CONFIG.s3_bucket.clone()).await?;
 
     Ok(Arc::new(client))
 }
@@ -209,21 +209,14 @@ async fn run(
     project_path: &Path,
     runner: &Runner<'_>,
     database_client: &deadpool_postgres::Client,
-    s3_client: &aws_sdk_s3::Client,
+    s3_client: &s3_wrapper::Client,
 ) -> Result<TestCaseResult> {
     let input_path = test_case
         .input_path
-        .as_ref()
+        .clone()
         .context("Input must be specified")?;
 
-    let input = download(
-        &CONFIG.s3_bucket,
-        input_path,
-        &CONFIG.s3_dir.join(input_path),
-        CONFIG.s3_max_retry_count,
-        s3_client,
-    )
-    .await?;
+    let input = s3_client.get(input_path).await?;
 
     let metrics = match runner.run(&input).await {
         Ok(metrics) => metrics,
@@ -238,14 +231,7 @@ async fn run(
         Err(error) => bail!(error),
     };
 
-    let expected_output = download(
-        &CONFIG.s3_bucket,
-        &test_case.output_path,
-        &CONFIG.s3_dir.join(input_path),
-        CONFIG.s3_max_retry_count,
-        s3_client,
-    )
-    .await?;
+    let expected_output = s3_client.get(test_case.output_path.clone()).await?;
 
     if metrics.stdout.trim() != expected_output.trim() {
         Ok(TestCaseResult::WrongAnswer(metrics))
@@ -258,7 +244,7 @@ async fn run(
 async fn process(
     delivery: Delivery,
     database_client: &deadpool_postgres::Client,
-    s3_client: &aws_sdk_s3::Client,
+    s3_client: &s3_wrapper::Client,
 ) -> Result<()> {
     let id = Uuid::from_slice(&delivery.data)?;
     let submission = queries::submission::get()
