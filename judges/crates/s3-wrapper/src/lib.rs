@@ -1,56 +1,55 @@
-mod error;
+use anyhow::{Context, Result};
+use foyer::{Engine, HybridCache, HybridCacheBuilder};
 
-use std::path::Path;
-
-use aws_sdk_s3::Client;
-
-use backon::{ExponentialBuilder, Retryable};
-use tokio::{fs, io::AsyncWriteExt};
-
-pub use error::{Error, Result};
-
-async fn _download(key: &str, bucket: &str, path: &Path, client: &Client) -> Result<()> {
-    let response = client
-        .get_object()
-        .bucket(bucket)
-        .key(key)
-        .send()
-        .await
-        .map_err(aws_sdk_s3::Error::from)?;
-
-    let file = response
-        .body
-        .collect()
-        .await
-        .map_err(std::io::Error::from)?
-        .into_bytes();
-
-    fs::OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(path)
-        .await?
-        .write_all(&file)
-        .await?;
-
-    Ok(())
+#[derive(Debug)]
+pub struct Client {
+    client: aws_sdk_s3::Client,
+    bucket: String,
+    cache: HybridCache<String, Vec<u8>>,
 }
 
-pub async fn download(
-    key: &str,
-    bucket: &str,
-    path: &Path,
-    max_retry_count: usize,
-    client: &Client,
-) -> Result<Vec<u8>> {
-    if !path.exists() {
-        let download_fn = || async move { _download(key, bucket, path, client).await };
-        download_fn
-            .retry(ExponentialBuilder::default().with_max_times(max_retry_count))
+impl Client {
+    pub async fn new(client: aws_sdk_s3::Client, bucket: String) -> Result<Self> {
+        // 1GB Cache
+        let cache = HybridCacheBuilder::new()
+            .with_name("s3")
+            .memory(1024)
+            .storage(Engine::Large)
+            .build()
             .await?;
+
+        Ok(Self {
+            client,
+            bucket,
+            cache,
+        })
     }
 
-    let data = fs::read(path).await?;
+    pub async fn get(&self, key: String) -> Result<Vec<u8>> {
+        if self.cache.contains(&key) {
+            let entry = self.cache.get(&key).await?.context("Cache missed")?;
 
-    Ok(data)
+            return Ok(entry.value().clone());
+        }
+
+        let response = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .send()
+            .await
+            .map_err(aws_sdk_s3::Error::from)?;
+
+        let data = response
+            .body
+            .collect()
+            .await
+            .map_err(anyhow::Error::from)?
+            .to_vec();
+
+        let entry = self.cache.insert(key, data);
+
+        Ok(entry.value().clone())
+    }
 }
