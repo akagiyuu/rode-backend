@@ -128,7 +128,7 @@ async fn init_runner<'a>(
 
     let runner = Runner::new(
         language.runner_args,
-        &project_path,
+        project_path,
         Duration::from_millis(time_limit as u64),
         memory_limit,
     )?;
