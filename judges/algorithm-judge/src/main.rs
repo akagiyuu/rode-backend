@@ -83,54 +83,6 @@ enum Status {
     Accepted,
 }
 
-struct TestCase {
-    index: i32,
-    input: Vec<u8>,
-    output: Vec<u8>,
-    is_hidden: bool,
-}
-
-impl TestCase {
-    async fn from_raw(
-        raw: queries::test_case::GetByQuestionId,
-        s3_client: &aws_sdk_s3::Client,
-    ) -> Result<Self> {
-        let input_path = raw.input_path.context("Input must be specified")?;
-
-        let (input, output) = tokio::try_join!(
-            async {
-                let cache_input_path = CONFIG.s3_dir.join(&input_path);
-                download(
-                    &CONFIG.s3_bucket,
-                    &input_path,
-                    &cache_input_path,
-                    CONFIG.s3_max_retry_count,
-                    s3_client,
-                )
-                .await
-            },
-            async {
-                let cache_output_path = CONFIG.s3_dir.join(&raw.output_path);
-                download(
-                    &CONFIG.s3_bucket,
-                    &raw.output_path,
-                    &cache_output_path,
-                    CONFIG.s3_max_retry_count,
-                    s3_client,
-                )
-                .await
-            },
-        )?;
-
-        Ok(Self {
-            index: raw.index,
-            input,
-            output,
-            is_hidden: raw.is_hidden,
-        })
-    }
-}
-
 #[tracing::instrument(err)]
 async fn process(
     delivery: Delivery,
@@ -180,9 +132,18 @@ async fn process(
 
     while let Some(test_case) = test_cases.next().await {
         let test_case = test_case?;
-        let test_case = TestCase::from_raw(test_case, s3_client).await?;
+        let input_path = test_case.input_path.context("Input must be specified")?;
 
-        let metrics = match runner.run(&test_case.input).await {
+        let input = download(
+            &CONFIG.s3_bucket,
+            &input_path,
+            &CONFIG.s3_dir.join(&input_path),
+            CONFIG.s3_max_retry_count,
+            s3_client,
+        )
+        .await?;
+
+        let metrics = match runner.run(&input).await {
             Ok(metrics) => metrics,
             Err(code_executor::Error::Timeout) => {
                 queries::submission::update_status()
@@ -250,7 +211,16 @@ async fn process(
             Err(error) => bail!(error),
         };
 
-        if metrics.stdout.trim() != test_case.output.trim() {
+        let expected_output = download(
+            &CONFIG.s3_bucket,
+            &test_case.output_path,
+            &CONFIG.s3_dir.join(&input_path),
+            CONFIG.s3_max_retry_count,
+            s3_client,
+        )
+        .await?;
+
+        if metrics.stdout.trim() != expected_output.trim() {
             queries::submission::update_status()
                 .params(
                     database_client,
