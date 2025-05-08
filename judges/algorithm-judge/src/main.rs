@@ -1,6 +1,10 @@
 mod config;
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::{Context, Result, bail};
 use bstr::ByteSlice;
@@ -84,32 +88,37 @@ enum Status {
 }
 
 #[tracing::instrument(err)]
-async fn process(
-    delivery: Delivery,
+async fn compile(
+    submission_id: Uuid,
+    language: Language<'_>,
+    code: &[u8],
     database_client: &deadpool_postgres::Client,
-    s3_client: &aws_sdk_s3::Client,
-) -> Result<()> {
-    let id = Uuid::from_slice(&delivery.data)?;
-    let submission = queries::submission::get()
-        .bind(database_client, &id)
-        .one()
-        .await?;
-    let language = get_language(submission.language)?;
-    let project_path = match language.compiler.compile(submission.code.as_bytes()).await {
-        Ok(project_path) => project_path,
+) -> Result<PathBuf> {
+    match language.compiler.compile(code).await {
+        Ok(project_path) => Ok(project_path),
         Err(error) => {
             queries::submission::update_status()
-                .bind(database_client, &0., &Some("Compilation error"), &None, &id)
+                .params(
+                    database_client,
+                    &queries::submission::UpdateStatusParams {
+                        score: 0.,
+                        error: Some("Compilation error"),
+                        failed_test_case: None,
+                        id: submission_id,
+                    },
+                )
                 .await?;
 
             bail!(error)
         }
-    };
+    }
+}
 
-    let question = queries::question::get()
-        .bind(database_client, &submission.question_id)
-        .one()
-        .await?;
+async fn init_runner<'a>(
+    question: &queries::question::Get,
+    language: Language<'a>,
+    project_path: &'a Path,
+) -> Result<Runner<'a>> {
     let time_limit = question
         .time_limit
         .context("Time limit must be specified")?;
@@ -124,110 +133,71 @@ async fn process(
         memory_limit,
     )?;
 
-    let test_cases = queries::test_case::get_by_question_id()
-        .bind(database_client, &submission.question_id)
-        .iter()
-        .await?;
-    tokio::pin!(test_cases);
+    Ok(runner)
+}
 
-    while let Some(test_case) = test_cases.next().await {
-        let test_case = test_case?;
-        let input_path = test_case.input_path.context("Input must be specified")?;
+#[tracing::instrument(err)]
+async fn run(
+    submission_id: Uuid,
+    test_case: queries::test_case::GetByQuestionId,
+    project_path: &Path,
+    runner: &Runner<'_>,
+    database_client: &deadpool_postgres::Client,
+    s3_client: &aws_sdk_s3::Client,
+) -> Result<()> {
+    let input_path = test_case.input_path.context("Input must be specified")?;
 
-        let input = download(
-            &CONFIG.s3_bucket,
-            &input_path,
-            &CONFIG.s3_dir.join(&input_path),
-            CONFIG.s3_max_retry_count,
-            s3_client,
-        )
-        .await?;
+    let input = download(
+        &CONFIG.s3_bucket,
+        &input_path,
+        &CONFIG.s3_dir.join(&input_path),
+        CONFIG.s3_max_retry_count,
+        s3_client,
+    )
+    .await?;
 
-        let metrics = match runner.run(&input).await {
-            Ok(metrics) => metrics,
-            Err(code_executor::Error::Timeout) => {
-                queries::submission::update_status()
-                    .params(
-                        database_client,
-                        &queries::submission::UpdateStatusParams {
-                            id,
-                            score: 0.,
-                            error: Some(format!("Time limit exceeded on test {}", test_case.index)),
-                            failed_test_case: Some(test_case.index),
-                        },
-                    )
-                    .await?;
-                if !test_case.is_hidden {
-                    queries::submission_detail::insert()
-                        .params(
-                            database_client,
-                            &queries::submission_detail::InsertParams {
-                                submission_id: id,
-                                index: test_case.index,
-                                status: Status::Timeout as i32,
-                                run_time: time_limit,
-                                stdout: "",
-                                stderr: "",
-                            },
-                        )
-                        .await?;
-                }
-
-                return Ok(());
-            }
-            Err(code_executor::Error::Runtime { message }) => {
-                tracing::info!("Runtime error on test {}: {}", test_case.index, message);
-
-                queries::submission::update_status()
-                    .params(
-                        database_client,
-                        &queries::submission::UpdateStatusParams {
-                            id,
-                            score: 0.,
-                            error: Some(format!("Runtime error on test {}", test_case.index)),
-                            failed_test_case: Some(test_case.index),
-                        },
-                    )
-                    .await?;
-
-                if !test_case.is_hidden {
-                    queries::submission_detail::insert()
-                        .params(
-                            database_client,
-                            &queries::submission_detail::InsertParams {
-                                submission_id: id,
-                                index: test_case.index,
-                                status: Status::RuntimeError as i32,
-                                run_time: 0,
-                                stdout: "",
-                                stderr: "",
-                            },
-                        )
-                        .await?;
-                }
-
-                return Ok(());
-            }
-            Err(error) => bail!(error),
-        };
-
-        let expected_output = download(
-            &CONFIG.s3_bucket,
-            &test_case.output_path,
-            &CONFIG.s3_dir.join(&input_path),
-            CONFIG.s3_max_retry_count,
-            s3_client,
-        )
-        .await?;
-
-        if metrics.stdout.trim() != expected_output.trim() {
+    let metrics = match runner.run(&input).await {
+        Ok(metrics) => metrics,
+        Err(code_executor::Error::Timeout) => {
             queries::submission::update_status()
                 .params(
                     database_client,
                     &queries::submission::UpdateStatusParams {
-                        id,
+                        id: submission_id,
                         score: 0.,
-                        error: Some(format!("Wrong answer on test {}", test_case.index)),
+                        error: Some(format!("Time limit exceeded on test {}", test_case.index)),
+                        failed_test_case: Some(test_case.index),
+                    },
+                )
+                .await?;
+            if !test_case.is_hidden {
+                queries::submission_detail::insert()
+                    .params(
+                        database_client,
+                        &queries::submission_detail::InsertParams {
+                            submission_id,
+                            index: test_case.index,
+                            status: Status::Timeout as i32,
+                            run_time: runner.time_limit.as_millis() as i32,
+                            stdout: "",
+                            stderr: "",
+                        },
+                    )
+                    .await?;
+            }
+
+            return Ok(());
+        }
+        Err(code_executor::Error::Runtime { message }) => {
+            tracing::info!("Runtime error on test {}: {}", test_case.index, message);
+
+            queries::submission::update_status()
+                .params(
+                    database_client,
+                    &queries::submission::UpdateStatusParams {
+                        id: submission_id,
+                        score: 0.,
+                        error: Some(format!("Runtime error on test {}", test_case.index)),
                         failed_test_case: Some(test_case.index),
                     },
                 )
@@ -238,12 +208,12 @@ async fn process(
                     .params(
                         database_client,
                         &queries::submission_detail::InsertParams {
-                            submission_id: id,
+                            submission_id,
                             index: test_case.index,
-                            status: Status::WrongAnswer as i32,
-                            run_time: metrics.run_time.as_millis() as i32,
-                            stdout: metrics.stdout.to_str()?,
-                            stderr: metrics.stderr.to_str()?,
+                            status: Status::RuntimeError as i32,
+                            run_time: 0,
+                            stdout: "",
+                            stderr: "",
                         },
                     )
                     .await?;
@@ -251,15 +221,39 @@ async fn process(
 
             return Ok(());
         }
+        Err(error) => bail!(error),
+    };
+
+    let expected_output = download(
+        &CONFIG.s3_bucket,
+        &test_case.output_path,
+        &CONFIG.s3_dir.join(&input_path),
+        CONFIG.s3_max_retry_count,
+        s3_client,
+    )
+    .await?;
+
+    if metrics.stdout.trim() != expected_output.trim() {
+        queries::submission::update_status()
+            .params(
+                database_client,
+                &queries::submission::UpdateStatusParams {
+                    id: submission_id,
+                    score: 0.,
+                    error: Some(format!("Wrong answer on test {}", test_case.index)),
+                    failed_test_case: Some(test_case.index),
+                },
+            )
+            .await?;
 
         if !test_case.is_hidden {
             queries::submission_detail::insert()
                 .params(
                     database_client,
                     &queries::submission_detail::InsertParams {
-                        submission_id: id,
+                        submission_id,
                         index: test_case.index,
-                        status: Status::Accepted as i32,
+                        status: Status::WrongAnswer as i32,
                         run_time: metrics.run_time.as_millis() as i32,
                         stdout: metrics.stdout.to_str()?,
                         stderr: metrics.stderr.to_str()?,
@@ -267,6 +261,67 @@ async fn process(
                 )
                 .await?;
         }
+
+        return Ok(());
+    }
+
+    if !test_case.is_hidden {
+        queries::submission_detail::insert()
+            .params(
+                database_client,
+                &queries::submission_detail::InsertParams {
+                    submission_id,
+                    index: test_case.index,
+                    status: Status::Accepted as i32,
+                    run_time: metrics.run_time.as_millis() as i32,
+                    stdout: metrics.stdout.to_str()?,
+                    stderr: metrics.stderr.to_str()?,
+                },
+            )
+            .await?;
+    }
+
+    Ok(())
+}
+
+#[tracing::instrument(err)]
+async fn process(
+    delivery: Delivery,
+    database_client: &deadpool_postgres::Client,
+    s3_client: &aws_sdk_s3::Client,
+) -> Result<()> {
+    let id = Uuid::from_slice(&delivery.data)?;
+    let submission = queries::submission::get()
+        .bind(database_client, &id)
+        .one()
+        .await?;
+    let language = get_language(submission.language)?;
+
+    let project_path = compile(id, language, submission.code.as_bytes(), database_client).await?;
+
+    let question = queries::question::get()
+        .bind(database_client, &submission.question_id)
+        .one()
+        .await?;
+    let runner = init_runner(&question, language, &project_path).await?;
+
+    let test_cases = queries::test_case::get_by_question_id()
+        .bind(database_client, &submission.question_id)
+        .iter()
+        .await?;
+    tokio::pin!(test_cases);
+
+    while let Some(test_case) = test_cases.next().await {
+        let test_case = test_case?;
+        run(
+            id,
+            test_case,
+            &project_path,
+            &runner,
+            database_client,
+            s3_client,
+        )
+        .await?;
     }
 
     queries::submission::update_status()
