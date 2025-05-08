@@ -162,6 +162,10 @@ impl TestCaseResult {
         time_limit: Duration,
         database_client: &deadpool_postgres::Client,
     ) -> Result<()> {
+        if test_case.is_hidden {
+            return Ok(());
+        }
+
         let params = match self {
             TestCaseResult::Timeout => queries::submission_detail::InsertParams {
                 submission_id,
