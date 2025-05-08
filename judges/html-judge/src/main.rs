@@ -157,14 +157,14 @@ async fn main() -> Result<()> {
             .await?;
         let database = database.clone();
         let s3_client = s3_client.clone();
-        let browser = browser.new_page("about:blank").await?;
+        let page = browser.new_page("about:blank").await?;
 
         join_set.spawn(async move {
             while let Some(delivery) = consumer.next().await {
                 let delivery = delivery?;
                 delivery.ack(BasicAckOptions::default()).await?;
 
-                let _ = process(delivery, &database.get().await?, &s3_client, &browser).await;
+                let _ = process(delivery, &database.get().await?, &s3_client, &page).await;
             }
 
             Ok::<_, anyhow::Error>(())
