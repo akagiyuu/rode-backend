@@ -152,6 +152,35 @@ impl Verdict {
 }
 
 #[tracing::instrument(err)]
+async fn insert_detail(
+    verdict: Verdict,
+    metrics: &Metrics,
+    submission_id: Uuid,
+    test_case: &queries::test_case::GetByQuestionId,
+    database_client: &deadpool_postgres::Client,
+) -> Result<()> {
+    if test_case.is_hidden {
+        return Ok(());
+    }
+
+    queries::submission_detail::insert()
+        .params(
+            database_client,
+            &queries::submission_detail::InsertParams {
+                submission_id,
+                index: test_case.index,
+                status: verdict as i32,
+                run_time: metrics.run_time.as_millis() as i32,
+                stdout: metrics.stdout.to_str()?,
+                stderr: metrics.stderr.to_str()?,
+            },
+        )
+        .await?;
+
+    Ok(())
+}
+
+#[tracing::instrument(err)]
 async fn run(
     submission_id: Uuid,
     test_case: &queries::test_case::GetByQuestionId,
