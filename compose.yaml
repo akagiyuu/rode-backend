@@ -1,0 +1,23 @@
+services:
+  html-judge:
+    container_name: rode-html-judge
+    build:
+      context: judges
+      dockerfile: html-judge/Dockerfile
+    restart: unless-stopped
+    networks:
+      - rode-network
+
+  algorithm-judge:
+    container_name: rode-algorithm-judge
+    build:
+      context: judges
+      dockerfile: algorithm-judge/Dockerfile
+    restart: unless-stopped
+    networks:
+      - rode-network
+
+networks:
+  rode-network:
+    name: rode-network
+    external: true
