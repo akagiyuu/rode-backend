@@ -142,11 +142,11 @@ enum Verdict {
 }
 
 impl Verdict {
-    fn as_error(&self, test_case_index: i32) -> String {
+    fn as_error(&self) -> &'static str {
         match self {
-            Self::Timeout => format!("Time limit exceeded on test {}", test_case_index),
-            Self::RuntimeError => format!("Runtime error on test {}", test_case_index),
-            Self::WrongAnswer => format!("Wrong answer on test {}", test_case_index),
+            Self::Timeout => "Time limit exceeded",
+            Self::RuntimeError => "Runtime error",
+            Self::WrongAnswer => "Wrong answer",
             _ => unreachable!(),
         }
     }
@@ -286,7 +286,7 @@ async fn process(
                 &queries::submission::UpdateStatusParams {
                     id: submission_id,
                     score: 0.,
-                    error: Some(verdict.as_error(test_case.index)),
+                    error: Some(verdict.as_error()),
                     failed_test_case: Some(test_case.index),
                 },
             )
