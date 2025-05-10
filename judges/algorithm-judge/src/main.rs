@@ -133,6 +133,7 @@ async fn init_runner<'a>(
 }
 
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Verdict {
     Ok = 0,
     WrongAnswer = 1,
@@ -221,15 +222,20 @@ async fn process(
     database_client: &deadpool_postgres::Client,
     s3_client: &s3_wrapper::Client,
 ) -> Result<()> {
-    let id = Uuid::from_slice(&delivery.data)?;
+    let submission_id = Uuid::from_slice(&delivery.data)?;
     let submission = queries::submission::get()
-        .bind(database_client, &id)
+        .bind(database_client, &submission_id)
         .one()
         .await?;
     let language = get_language(submission.language)?;
 
     let (project_path, question) = tokio::try_join!(
-        compile(id, language, submission.code.as_bytes(), database_client),
+        compile(
+            submission_id,
+            language,
+            submission.code.as_bytes(),
+            database_client
+        ),
         async {
             queries::question::get()
                 .bind(database_client, &submission.question_id)
@@ -252,8 +258,8 @@ async fn process(
     while let Some(test_case) = test_cases.next().await {
         let test_case = test_case?;
 
-        let test_case_result = run(
-            id,
+        let (verdict, metrics) = run(
+            submission_id,
             &test_case,
             &project_path,
             &runner,
@@ -261,43 +267,16 @@ async fn process(
             s3_client,
         )
         .await?;
-        if test_case.is_hidden {
-            return Ok(());
-        }
+        insert_detail(
+            verdict,
+            &metrics,
+            submission_id,
+            &test_case,
+            database_client,
+        )
+        .await?;
 
-        let params = match self {
-            TestCaseResult::Timeout => queries::submission_detail::InsertParams {
-                submission_id,
-                index: test_case.index,
-                status: self.as_database_enum(),
-                run_time: time_limit.as_millis() as i32,
-                stdout: "",
-                stderr: "",
-            },
-            TestCaseResult::RuntimeError => queries::submission_detail::InsertParams {
-                submission_id,
-                index: test_case.index,
-                status: self.as_database_enum(),
-                run_time: 0,
-                stdout: "",
-                stderr: "",
-            },
-            TestCaseResult::WrongAnswer(metrics) | TestCaseResult::Accepted(metrics) => {
-                queries::submission_detail::InsertParams {
-                    submission_id,
-                    index: test_case.index,
-                    status: self.as_database_enum(),
-                    run_time: metrics.run_time.as_millis() as i32,
-                    stdout: metrics.stdout.to_str()?,
-                    stderr: metrics.stderr.to_str()?,
-                }
-            }
-        };
-
-        queries::submission_detail::insert()
-            .params(database_client, &params)
-            .await?;
-        if matches!(test_case_result, TestCaseResult::Accepted(_)) {
+        if verdict == Verdict::Ok {
             continue;
         }
 
@@ -305,9 +284,9 @@ async fn process(
             .params(
                 database_client,
                 &queries::submission::UpdateStatusParams {
-                    id,
+                    id: submission_id,
                     score: 0.,
-                    error: Some(test_case_result.as_error(test_case.index)),
+                    error: Some(verdict.as_error(test_case.index)),
                     failed_test_case: Some(test_case.index),
                 },
             )
@@ -320,7 +299,7 @@ async fn process(
         .params(
             database_client,
             &queries::submission::UpdateStatusParams::<&str> {
-                id,
+                id: submission_id,
                 score: question.score,
                 error: None,
                 failed_test_case: None,
