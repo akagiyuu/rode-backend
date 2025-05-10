@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use bstr::ByteSlice;
-use code_executor::{CPP, JAVA, Language, Metrics, PYTHON, Runner};
+use code_executor::{CPP, ExitStatus, JAVA, Language, Metrics, PYTHON, Runner};
 use config::CONFIG;
 use database::{client::Params, deadpool_postgres, queries, tokio_postgres::NoTls};
 use futures::StreamExt;
@@ -131,77 +131,22 @@ async fn init_runner<'a>(
     Ok(runner)
 }
 
-enum TestCaseResult {
-    Timeout,
-    RuntimeError,
-    WrongAnswer(Metrics),
-    Accepted(Metrics),
+#[repr(i32)]
+enum Verdict {
+    Timeout = 0,
+    RuntimeError = 1,
+    WrongAnswer = 2,
+    Accepted = 3,
 }
 
-impl TestCaseResult {
+impl Verdict {
     fn as_error(&self, test_case_index: i32) -> String {
         match self {
-            TestCaseResult::Timeout => format!("Time limit exceeded on test {}", test_case_index),
-            TestCaseResult::RuntimeError => format!("Runtime error on test {}", test_case_index),
-            TestCaseResult::WrongAnswer(_) => format!("Wrong answer on test {}", test_case_index),
+            Self::Timeout => format!("Time limit exceeded on test {}", test_case_index),
+            Self::RuntimeError => format!("Runtime error on test {}", test_case_index),
+            Self::WrongAnswer => format!("Wrong answer on test {}", test_case_index),
             _ => unreachable!(),
         }
-    }
-
-    fn as_database_enum(&self) -> i32 {
-        match self {
-            TestCaseResult::Timeout => 0,
-            TestCaseResult::RuntimeError => 1,
-            TestCaseResult::WrongAnswer(_) => 2,
-            TestCaseResult::Accepted(_) => 3,
-        }
-    }
-
-    async fn save(
-        &self,
-        submission_id: Uuid,
-        test_case: &queries::test_case::GetByQuestionId,
-        time_limit: Duration,
-        database_client: &deadpool_postgres::Client,
-    ) -> Result<()> {
-        if test_case.is_hidden {
-            return Ok(());
-        }
-
-        let params = match self {
-            TestCaseResult::Timeout => queries::submission_detail::InsertParams {
-                submission_id,
-                index: test_case.index,
-                status: self.as_database_enum(),
-                run_time: time_limit.as_millis() as i32,
-                stdout: "",
-                stderr: "",
-            },
-            TestCaseResult::RuntimeError => queries::submission_detail::InsertParams {
-                submission_id,
-                index: test_case.index,
-                status: self.as_database_enum(),
-                run_time: 0,
-                stdout: "",
-                stderr: "",
-            },
-            TestCaseResult::WrongAnswer(metrics) | TestCaseResult::Accepted(metrics) => {
-                queries::submission_detail::InsertParams {
-                    submission_id,
-                    index: test_case.index,
-                    status: self.as_database_enum(),
-                    run_time: metrics.run_time.as_millis() as i32,
-                    stdout: metrics.stdout.to_str()?,
-                    stderr: metrics.stderr.to_str()?,
-                }
-            }
-        };
-
-        queries::submission_detail::insert()
-            .params(database_client, &params)
-            .await?;
-
-        Ok(())
     }
 }
 
@@ -213,7 +158,7 @@ async fn run(
     runner: &Runner<'_>,
     database_client: &deadpool_postgres::Client,
     s3_client: &s3_wrapper::Client,
-) -> Result<TestCaseResult> {
+) -> Result<(Verdict, Metrics)> {
     let input_path = test_case
         .input_path
         .clone()
@@ -221,26 +166,15 @@ async fn run(
 
     let input = s3_client.get(input_path).await?;
 
-    let metrics = match runner.run(&input).await {
-        Ok(metrics) => metrics,
-        Err(code_executor::Error::Timeout) => {
-            return Ok(TestCaseResult::Timeout);
-        }
-        Err(code_executor::Error::Runtime { message }) => {
-            tracing::info!("Runtime error on tdest {}: {}", test_case.index, message);
+    let metrics = runner.run(&input).await?;
 
-            return Ok(TestCaseResult::RuntimeError);
+    match metrics.exit_status {
+        ExitStatus::Success => {
+            let expected_output = s3_client.get(test_case.output_path.clone()).await?;
         }
-        Err(error) => bail!(error),
+        ExitStatus::RuntimeError => todo!(),
+        ExitStatus::Timeout => todo!(),
     };
-
-    let expected_output = s3_client.get(test_case.output_path.clone()).await?;
-
-    if metrics.stdout.trim() != expected_output.trim() {
-        Ok(TestCaseResult::WrongAnswer(metrics))
-    } else {
-        Ok(TestCaseResult::Accepted(metrics))
-    }
 }
 
 #[tracing::instrument(err)]
@@ -289,8 +223,41 @@ async fn process(
             s3_client,
         )
         .await?;
-        test_case_result
-            .save(id, &test_case, runner.time_limit, database_client)
+        if test_case.is_hidden {
+            return Ok(());
+        }
+
+        let params = match self {
+            TestCaseResult::Timeout => queries::submission_detail::InsertParams {
+                submission_id,
+                index: test_case.index,
+                status: self.as_database_enum(),
+                run_time: time_limit.as_millis() as i32,
+                stdout: "",
+                stderr: "",
+            },
+            TestCaseResult::RuntimeError => queries::submission_detail::InsertParams {
+                submission_id,
+                index: test_case.index,
+                status: self.as_database_enum(),
+                run_time: 0,
+                stdout: "",
+                stderr: "",
+            },
+            TestCaseResult::WrongAnswer(metrics) | TestCaseResult::Accepted(metrics) => {
+                queries::submission_detail::InsertParams {
+                    submission_id,
+                    index: test_case.index,
+                    status: self.as_database_enum(),
+                    run_time: metrics.run_time.as_millis() as i32,
+                    stdout: metrics.stdout.to_str()?,
+                    stderr: metrics.stderr.to_str()?,
+                }
+            }
+        };
+
+        queries::submission_detail::insert()
+            .params(database_client, &params)
             .await?;
         if matches!(test_case_result, TestCaseResult::Accepted(_)) {
             continue;
