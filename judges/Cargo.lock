@@ -1449,14 +1449,12 @@ dependencies = [
 
 [[package]]
 name = "code-executor"
-version = "2.5.0"
+version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "108f91a3363867345b057ba7ce6b547a52e9152d39dff01b3c5f37603a5953ca"
+checksum = "0ed1c9ee8cff8a98bd61fe0578684163929b041c798363e5d9602115aea4cdcb"
 dependencies = [
  "cached",
  "cgroups-rs",
- "libseccomp",
- "state-shift",
  "thiserror 2.0.12",
  "tokio",
  "tracing",
@@ -3169,24 +3167,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "libseccomp"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e5310a2c5b6ffbc094b5f70a2ca7b79ed36ad90e6f90994b166489a1bce3fcc"
-dependencies = [
- "bitflags 2.9.0",
- "libc",
- "libseccomp-sys",
- "pkg-config",
-]
-
-[[package]]
-name = "libseccomp-sys"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60276e2d41bbb68b323e566047a1bfbf952050b157d8b5cdc74c07c1bf4ca3b6"
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4803,24 +4783,6 @@ name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
-
-[[package]]
-name = "state-shift"
-version = "2.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b84d514d82ae2456c0ecc1fdf84e77368ff158e7a9dcdfc135669ba3ec57fdf"
-dependencies = [
- "proc-macro2",
- "quote",
- "stringcase",
- "syn 2.0.101",
-]
-
-[[package]]
-name = "stringcase"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72abeda133c49d7bddece6c154728f83eec8172380c80ab7096da9487e20d27c"
 
 [[package]]
 name = "stringprep"
