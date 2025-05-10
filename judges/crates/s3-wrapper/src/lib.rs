@@ -42,15 +42,9 @@ impl Client {
             .bucket(&self.bucket)
             .key(&key)
             .send()
-            .await
-            .map_err(aws_sdk_s3::Error::from)?;
+            .await?;
 
-        let data = response
-            .body
-            .collect()
-            .await
-            .map_err(anyhow::Error::from)?
-            .to_vec();
+        let data = response.body.collect().await?.to_vec();
 
         let entry = self.cache.insert(key, data);
 
