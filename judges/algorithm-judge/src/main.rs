@@ -106,6 +106,7 @@ async fn compile(
     }
 }
 
+#[tracing::instrument(err)]
 async fn init_runner<'a>(
     question: &queries::question::Get,
     language: Language<'a>,
@@ -133,10 +134,10 @@ async fn init_runner<'a>(
 
 #[repr(i32)]
 enum Verdict {
-    Timeout = 0,
-    RuntimeError = 1,
-    WrongAnswer = 2,
-    Accepted = 3,
+    Ok = 0,
+    WrongAnswer = 1,
+    RuntimeError = 2,
+    Timeout = 3,
 }
 
 impl Verdict {
@@ -168,13 +169,21 @@ async fn run(
 
     let metrics = runner.run(&input).await?;
 
-    match metrics.exit_status {
+    let verdict = match metrics.exit_status {
         ExitStatus::Success => {
             let expected_output = s3_client.get(test_case.output_path.clone()).await?;
+
+            if metrics.stdout.trim() == expected_output.trim() {
+                Verdict::Ok
+            } else {
+                Verdict::WrongAnswer
+            }
         }
-        ExitStatus::RuntimeError => todo!(),
-        ExitStatus::Timeout => todo!(),
+        ExitStatus::RuntimeError => Verdict::RuntimeError,
+        ExitStatus::Timeout => Verdict::Timeout,
     };
+
+    Ok((verdict, metrics))
 }
 
 #[tracing::instrument(err)]
