@@ -1010,17 +1010,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "backon"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd0b50b1b78dbadd44ab18b3c794e496f3a139abb9fbc27d9c94c4eebbb96496"
-dependencies = [
- "fastrand 2.3.0",
- "gloo-timers",
- "tokio",
-]
-
-[[package]]
 name = "backtrace"
 version = "0.3.74"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4479,11 +4468,7 @@ dependencies = [
  "ahash",
  "anyhow",
  "aws-sdk-s3",
- "backon",
  "foyer",
- "futures",
- "thiserror 2.0.12",
- "tokio",
 ]
 
 [[package]]
