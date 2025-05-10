@@ -111,6 +111,8 @@ async fn init_runner<'a>(
     language: Language<'a>,
     project_path: &'a Path,
 ) -> Result<Runner<'a>> {
+    const PROCESS_COUNT_LIMIT: usize = 512;
+
     let time_limit = question
         .time_limit
         .context("Time limit must be specified")?;
@@ -123,6 +125,7 @@ async fn init_runner<'a>(
         project_path,
         Duration::from_millis(time_limit as u64),
         memory_limit,
+        PROCESS_COUNT_LIMIT,
     )?;
 
     Ok(runner)
