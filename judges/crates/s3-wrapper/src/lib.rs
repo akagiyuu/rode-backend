@@ -1,6 +1,5 @@
-use ahash::RandomState;
 use anyhow::{Context, Result};
-use foyer::{CacheEntry, Engine, HybridCache, HybridCacheBuilder, HybridCacheProperties};
+use foyer::{Engine, HybridCache, HybridCacheBuilder, HybridCacheEntry};
 
 #[derive(Debug)]
 pub struct Client {
@@ -26,10 +25,7 @@ impl Client {
         })
     }
 
-    pub async fn get(
-        &self,
-        key: String,
-    ) -> Result<CacheEntry<String, Vec<u8>, RandomState, HybridCacheProperties>> {
+    pub async fn get(&self, key: String) -> Result<HybridCacheEntry<String, Vec<u8>>> {
         if self.cache.contains(&key) {
             let entry = self.cache.get(&key).await?.context("Cache missed")?;
 
