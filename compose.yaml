@@ -1,9 +1,60 @@
 services:
+  postgres:
+    container_name: rode-postgres
+    image: postgres
+    environment:
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: ${PG_DB}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    restart: always
+    networks:
+      - rode-network
+  cloudbeaver:
+    container_name: rode-cloudbeaver
+    image: dbeaver/cloudbeaver:latest
+    restart: always
+    ports:
+       - '8978:8978'
+    volumes:
+      - cloudbeaver:/opt/cloudbeaver/workspace
+    networks:
+      - rode-network
+
+  rabbitmq:
+    container_name: rode-rabbitmq
+    image: "rabbitmq:4-management"
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    restart: always
+    networks:
+      - rode-network
+
   html-judge:
     container_name: rode-html-judge
     build:
       context: judges
       dockerfile: html-judge/Dockerfile
+    environment:
+      AMQP_ADDR: "amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq/%2f"
+      ID: "1"
+      HTML_QUEUE_NAME: ${HTML_QUEUE_NAME}
+      DATABASE_URL: "postgres://${PG_USER}:${PG_PASSWORD}@database/${PG_DB}"
+      WIDTH: ${BROWSER_WIDTH}
+      HEIGHT: ${BROWSER_HEIGHT}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      THREAD_COUNT: ${HTML_JUDGE_THREAD_COUNT}
+    depends_on:
+      - rabbitmq
     restart: unless-stopped
     networks:
       - rode-network
@@ -13,6 +64,17 @@ services:
     build:
       context: judges
       dockerfile: algorithm-judge/Dockerfile
+    environment:
+      AMQP_ADDR: "amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq/%2f"
+      ID: "1"
+      ALGORITHM_QUEUE_NAME: ${ALGORITHM_QUEUE_NAME}
+      DATABASE_URL: "postgres://${PG_USER}:${PG_PASSWORD}@database/${PG_DB}"
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      THREAD_COUNT: ${ALGORITHM_JUDGE_THREAD_COUNT}
     restart: unless-stopped
     networks:
       - rode-network
@@ -20,4 +82,12 @@ services:
 networks:
   rode-network:
     name: rode-network
+    external: true
+
+volumes:
+  postgres:
+    name: rode-postgres
+    external: true
+  cloudbeaver:
+    name: rode-cloudbeaver
     external: true
