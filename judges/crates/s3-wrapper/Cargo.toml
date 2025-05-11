@@ -4,11 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ahash = "0.8.12"
+ahash = { workspace = true }
 anyhow.workspace = true
 aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
-backon = { workspace = true }
-foyer = { version = "0.17.0", features = ["tracing"] }
-futures = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
+foyer = { workspace = true, features = ["tracing"] }
