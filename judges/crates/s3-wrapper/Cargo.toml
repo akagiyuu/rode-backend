@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ahash = { workspace = true }
 anyhow.workspace = true
 aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
 foyer = { workspace = true, features = ["tracing"] }
