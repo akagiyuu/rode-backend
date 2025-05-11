@@ -7,7 +7,7 @@ anyhow = "1.0.98"
 aws-config = "1.6.2"
 aws-sdk-s3 = "1.85.0"
 chromiumoxide = { version = "0.7.0", features = ["tokio-runtime"], default-features = false }
-config = "0.15.11"
+config = { version = "0.15.11", default-features = false }
 database = { version = "0.1.0", path = "crates/database" }
 deadpool-postgres = "0.14.1"
 futures = "0.3.31"
