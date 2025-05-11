@@ -23,7 +23,7 @@ tokio = { version = "1.45.0", features = ["full"] }
 tokio-postgres = "0.7.13"
 uuid = { version = "1.16.0", features = ["v4", "fast-rng"] }
 bstr = "1.12.0"
-code-executor = "2.6.0"
+code-executor = "2.6.1"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19" , features = ["fmt", "chrono", "env-filter"] }
 foyer = { version = "0.17.1", features = ["tracing"] }

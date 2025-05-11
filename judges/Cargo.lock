@@ -1322,9 +1322,9 @@ dependencies = [
 
 [[package]]
 name = "code-executor"
-version = "2.6.0"
+version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ed1c9ee8cff8a98bd61fe0578684163929b041c798363e5d9602115aea4cdcb"
+checksum = "0a1b43ecfffa3130ebcc4f0a9fd30b4948061256554bf9d0af76fe7e7f9cc9a0"
 dependencies = [
  "cached",
  "cgroups-rs",
