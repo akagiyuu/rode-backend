@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 anyhow.workspace = true
-aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
-foyer = { workspace = true, features = ["tracing"] }
+aws-sdk-s3.workspace = true
+foyer.workspace = true
